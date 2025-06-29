@@ -1,6 +1,11 @@
-name: Auto Publish to PyPI
+name: Publish to PyPI
 
 # 当代码更新时自动发布到PyPI并更新版本号
+
+permissions:
+  contents: write
+  id-token: write
+
 on:
   push:
     branches: [ main ]
