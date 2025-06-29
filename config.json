@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "web-search": {
+      "command": "python",
+      "args": ["/root/mcp_dev/server.py"],
+      "env": {
+        "PYTHONPATH": "/root/mcp_dev"
+      }
+    }
+  }
+}

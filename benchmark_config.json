@@ -1,0 +1,109 @@
+{
+  "test_configurations": {
+    "quick_test": {
+      "description": "快速测试配置，适合日常检查",
+      "search_iterations": 5,
+      "content_iterations": 3,
+      "concurrent_requests": 3,
+      "request_delay": 0.2
+    },
+    "standard_test": {
+      "description": "标准测试配置，适合性能评估",
+      "search_iterations": 20,
+      "content_iterations": 10,
+      "concurrent_requests": 5,
+      "request_delay": 0.1
+    },
+    "stress_test": {
+      "description": "压力测试配置，适合极限测试",
+      "search_iterations": 50,
+      "content_iterations": 20,
+      "concurrent_requests": 10,
+      "request_delay": 0.05,
+      "stress_duration": 60
+    }
+  },
+  "test_data": {
+    "search_queries": [
+      "Python编程",
+      "机器学习",
+      "人工智能",
+      "Web开发",
+      "数据库设计",
+      "云计算",
+      "网络安全",
+      "移动开发",
+      "区块链",
+      "大数据",
+      "JavaScript",
+      "React框架",
+      "Node.js",
+      "Docker容器",
+      "Kubernetes",
+      "微服务架构",
+      "API设计",
+      "数据分析",
+      "深度学习",
+      "自然语言处理"
+    ],
+    "test_urls": [
+      "https://www.python.org",
+      "https://github.com",
+      "https://stackoverflow.com",
+      "https://docs.python.org",
+      "https://www.w3schools.com",
+      "https://developer.mozilla.org",
+      "https://www.npmjs.com",
+      "https://reactjs.org",
+      "https://nodejs.org",
+      "https://www.docker.com"
+    ]
+  },
+  "performance_thresholds": {
+    "search_response_time": {
+      "excellent": 1500,
+      "good": 3000,
+      "acceptable": 5000
+    },
+    "content_response_time": {
+      "excellent": 2000,
+      "good": 5000,
+      "acceptable": 10000
+    },
+    "success_rate": {
+      "excellent": 90,
+      "good": 75,
+      "acceptable": 60
+    },
+    "memory_usage": {
+      "excellent": 100,
+      "good": 200,
+      "warning": 500
+    },
+    "cpu_usage": {
+      "excellent": 30,
+      "good": 60,
+      "warning": 90
+    }
+  },
+  "output_settings": {
+    "save_detailed_results": true,
+    "save_summary_only": false,
+    "include_timestamps": true,
+    "include_system_info": true,
+    "export_formats": ["json", "csv"]
+  },
+  "network_settings": {
+    "timeout": 30,
+    "max_retries": 3,
+    "user_agent": "MCP-WebSearch-Benchmark/1.0",
+    "headers": {
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+      "Accept-Encoding": "gzip, deflate",
+      "DNT": "1",
+      "Connection": "keep-alive",
+      "Upgrade-Insecure-Requests": "1"
+    }
+  }
+}
