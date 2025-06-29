@@ -89,7 +89,6 @@ python server.py
     "heventure-search-mcp": {
       "command": "uvx",
       "args": [
-        "-y",
         "heventure-search-mcp"
       ]
     }
