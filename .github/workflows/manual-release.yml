@@ -1,0 +1,174 @@
+name: Manual Release
+
+# 手动触发发布流程
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.1)'
+        required: true
+        type: string
+      test_first:
+        description: 'Test on TestPyPI first'
+        required: false
+        default: true
+        type: boolean
+      create_release:
+        description: 'Create GitHub Release'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  manual-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+    
+    - name: Update version
+      run: |
+        python << 'EOF'
+        import re
+        
+        version = "${{ github.event.inputs.version }}"
+        
+        # 更新 pyproject.toml
+        with open('pyproject.toml', 'r') as f:
+            content = f.read()
+        content = re.sub(r'version = "[^"]+"', f'version = "{version}"', content)
+        with open('pyproject.toml', 'w') as f:
+            f.write(content)
+        
+        # 更新 __init__.py
+        with open('__init__.py', 'r') as f:
+            content = f.read()
+        content = re.sub(r'__version__ = "[^"]+"', f'__version__ = "{version}"', content)
+        with open('__init__.py', 'w') as f:
+            f.write(content)
+        
+        print(f"Version updated to: {version}")
+        EOF
+    
+    - name: Commit version update
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add pyproject.toml __init__.py
+        git commit -m "Release version ${{ github.event.inputs.version }}"
+        git push
+    
+    - name: Build package
+      run: |
+        python -m build
+        echo "Built packages:"
+        ls -la dist/
+    
+    - name: Check package
+      run: |
+        python -m twine check dist/*
+    
+    - name: Test publish to TestPyPI
+      if: github.event.inputs.test_first == 'true'
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+      run: |
+        echo "Publishing to TestPyPI..."
+        python -m twine upload --repository testpypi dist/* --verbose
+        echo "✅ Successfully published to TestPyPI"
+        echo "Test installation: pip install --index-url https://test.pypi.org/simple/ heventure-search-mcp==${{ github.event.inputs.version }}"
+    
+    - name: Wait before PyPI
+      if: github.event.inputs.test_first == 'true'
+      run: |
+        echo "Waiting 30 seconds before publishing to PyPI..."
+        sleep 30
+    
+    - name: Publish to PyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        echo "Publishing to PyPI..."
+        python -m twine upload dist/* --verbose
+        echo "✅ Successfully published to PyPI"
+        echo "Install with: pip install heventure-search-mcp==${{ github.event.inputs.version }}"
+    
+    - name: Create Git Tag
+      run: |
+        git tag v${{ github.event.inputs.version }}
+        git push origin v${{ github.event.inputs.version }}
+    
+    - name: Create GitHub Release
+      if: github.event.inputs.create_release == 'true'
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.event.inputs.version }}
+        release_name: Release v${{ github.event.inputs.version }}
+        body: |
+          ## 🚀 版本 ${{ github.event.inputs.version }}
+          
+          ### 📦 安装方式
+          ```bash
+          pip install heventure-search-mcp==${{ github.event.inputs.version }}
+          ```
+          
+          或使用 uvx：
+          ```bash
+          uvx heventure-search-mcp
+          ```
+          
+          ### 🔗 链接
+          - [PyPI 页面](https://pypi.org/project/heventure-search-mcp/${{ github.event.inputs.version }}/)
+          - [GitHub 仓库](https://github.com/${{ github.repository }})
+          - [文档](https://github.com/${{ github.repository }}#readme)
+          
+          ### 📋 更新内容
+          请查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 获取详细更新内容。
+          
+          ### 🛠️ 使用方法
+          
+          #### 作为 MCP 服务器
+          ```bash
+          heventure-search-mcp
+          ```
+          
+          #### 编程方式使用
+          ```python
+          from server import WebSearcher
+          
+          searcher = WebSearcher()
+          results = await searcher.search("Python MCP")
+          ```
+          
+          ---
+          
+          感谢使用 heventure-search-mcp！如有问题请提交 Issue。
+        draft: false
+        prerelease: false
+    
+    - name: Summary
+      run: |
+        echo "🎉 Release ${{ github.event.inputs.version }} completed successfully!"
+        echo ""
+        echo "📦 Package: https://pypi.org/project/heventure-search-mcp/${{ github.event.inputs.version }}/"
+        echo "🏷️ Release: https://github.com/${{ github.repository }}/releases/tag/v${{ github.event.inputs.version }}"
+        echo ""
+        echo "Install with:"
+        echo "  pip install heventure-search-mcp==${{ github.event.inputs.version }}"
+        echo "  uvx heventure-search-mcp"

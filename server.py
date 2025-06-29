@@ -117,6 +117,50 @@ class WebSearcher:
             logger.error(f"DuckDuckGo HTML搜索错误: {e}")
             return []
     
+    async def search_bing(self, query: str, max_results: int = 10) -> list:
+        """使用必应搜索"""
+        try:
+            # 必应搜索URL
+            url = f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results}"
+            
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    results = []
+                    
+                    # 查找搜索结果
+                    result_items = soup.find_all('li', class_='b_algo')
+                    
+                    for item in result_items[:max_results]:
+                        # 获取标题和链接
+                        title_elem = item.find('h2')
+                        if title_elem:
+                            link_elem = title_elem.find('a')
+                            if link_elem:
+                                title = link_elem.get_text(strip=True)
+                                url = link_elem.get('href', '')
+                                
+                                # 获取摘要
+                                snippet_elem = item.find('p') or item.find('div', class_='b_caption')
+                                snippet = snippet_elem.get_text(strip=True) if snippet_elem else ''
+                                
+                                # 清理摘要中的多余空格
+                                snippet = re.sub(r'\s+', ' ', snippet)
+                                
+                                results.append({
+                                    'title': title,
+                                    'url': url,
+                                    'snippet': snippet,
+                                    'type': 'bing_result'
+                                })
+                    
+                    return results
+        except Exception as e:
+            logger.error(f"必应搜索错误: {e}")
+            return []
+    
     async def get_page_content(self, url: str) -> str:
         """获取网页内容"""
         try:
@@ -148,13 +192,13 @@ async def handle_list_tools() -> list[Tool]:
     return [
         Tool(
             name="web_search",
-            description="搜索网页内容，使用DuckDuckGo搜索引擎",
+            description="搜索网页内容，支持DuckDuckGo和必应搜索引擎",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "搜索查询词"
+                        "description": "搜索查询字符串"
                     },
                     "max_results": {
                         "type": "integer",
@@ -162,6 +206,12 @@ async def handle_list_tools() -> list[Tool]:
                         "default": 10,
                         "minimum": 1,
                         "maximum": 20
+                    },
+                    "search_engine": {
+                        "type": "string",
+                        "description": "搜索引擎选择",
+                        "enum": ["duckduckgo", "bing", "both"],
+                        "default": "both"
                     }
                 },
                 "required": ["query"]
@@ -192,18 +242,30 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     if name == "web_search":
         query = arguments.get("query", "")
         max_results = arguments.get("max_results", 10)
+        search_engine = arguments.get("search_engine", "both")
         
         if not query:
             return [TextContent(type="text", text="错误：搜索查询不能为空")]
         
         async with WebSearcher() as searcher:
-            # 首先尝试API搜索
-            results = await searcher.search_duckduckgo(query, max_results)
+            results = []
             
-            # 如果API搜索结果不足，尝试HTML搜索
-            if len(results) < max_results:
-                html_results = await searcher.search_html_duckduckgo(query, max_results - len(results))
-                results.extend(html_results)
+            if search_engine in ["duckduckgo", "both"]:
+                # DuckDuckGo搜索
+                ddg_results = await searcher.search_duckduckgo(query, max_results)
+                if len(ddg_results) < max_results:
+                    html_results = await searcher.search_html_duckduckgo(query, max_results - len(ddg_results))
+                    ddg_results.extend(html_results)
+                results.extend(ddg_results)
+            
+            if search_engine in ["bing", "both"]:
+                # 必应搜索
+                bing_results = await searcher.search_bing(query, max_results)
+                results.extend(bing_results)
+            
+            # 如果选择both，限制总结果数量
+            if search_engine == "both":
+                results = results[:max_results]
             
             if not results:
                 return [TextContent(type="text", text="未找到相关搜索结果")]
@@ -218,7 +280,13 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     f"   类型: {result['type']}\n"
                 )
             
-            response_text = f"搜索查询: {query}\n\n" + "\n".join(formatted_results)
+            search_engines_used = {
+                "duckduckgo": "DuckDuckGo",
+                "bing": "必应",
+                "both": "DuckDuckGo + 必应"
+            }
+            
+            response_text = f"搜索查询: {query}\n搜索引擎: {search_engines_used[search_engine]}\n\n" + "\n".join(formatted_results)
             return [TextContent(type="text", text=response_text)]
     
     elif name == "get_webpage_content":
