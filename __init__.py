@@ -5,7 +5,7 @@ MCP Web Search Server
 一个无需API key的网页搜索MCP服务器，使用DuckDuckGo搜索引擎提供网页搜索功能。
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.1"
 __author__ = "HughesCuit"
 __description__ = "一个无需API key的网页搜索MCP服务器"
 
