@@ -13,6 +13,13 @@ from urllib.parse import quote_plus
 import aiohttp
 from bs4 import BeautifulSoup
 import re
+import sys
+
+# Ensure brotli is available for aiohttp to handle br encoding
+try:
+    import brotli
+except ImportError:
+    pass
 
 from mcp.server.models import InitializationOptions
 from mcp.server import NotificationOptions, Server
@@ -39,11 +46,23 @@ class WebSearcher:
     _search_cache: dict = {}
     _cache_max_size: int = 100
     
+    # 更好的 headers 来避免被网站阻止
+    DEFAULT_HEADERS = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
+    }
+    
     def __init__(self):
         self.session = None
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
+        self.headers = self.DEFAULT_HEADERS.copy()
     
     @staticmethod
     def _get_cache_key(query: str, engine: str, max_results: int) -> str:
@@ -161,58 +180,245 @@ class WebSearcher:
     async def search_bing(self, query: str, max_results: int = 10) -> list:
         """使用必应搜索"""
         try:
-            # 必应搜索URL - 使用更完整的 headers 来避免重定向
             url = f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results}"
             
-            async with self.session.get(url, allow_redirects=True) as response:
+            async with self.session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)) as response:
                 if response.status == 200:
                     html = await response.text()
-                    soup = BeautifulSoup(html, 'html.parser')
                     
+                    # 检测是否被阻止（CAPTCHA挑战等）
+                    if "challenge" in html.lower() or "solve the challenge" in html.lower():
+                        logger.warning("Bing返回了验证码挑战页面，尝试备用方法")
+                        return await self.search_bing_html(query, max_results)
+                    
+                    soup = BeautifulSoup(html, 'html.parser')
                     results = []
                     
-                    # 查找搜索结果
+                    # 新版Bing使用不同的HTML结构
+                    # 尝试多种选择器
                     result_items = soup.find_all('li', class_='b_algo')
+                    
+                    if not result_items:
+                        # 尝试查找包含搜索结果的容器
+                        result_items = soup.find_all('li', class_=re.compile(r'b_'))
+                    
+                    if not result_items:
+                        # 尝试 ol#b_results
+                        ol = soup.find('ol', id='b_results')
+                        if ol:
+                            result_items = ol.find_all('li')
                     
                     for item in result_items[:max_results]:
                         # 获取标题和链接
                         title_elem = item.find('h2')
+                        if not title_elem:
+                            title_elem = item.find('a', class_=re.compile(r'title'))
                         if title_elem:
-                            link_elem = title_elem.find('a')
-                            if link_elem:
+                            link_elem = title_elem.find('a') if title_elem.name == 'h2' else title_elem
+                            if link_elem and link_elem.name == 'a':
                                 title = link_elem.get_text(strip=True)
                                 url = link_elem.get('href', '')
-                                
-                                # 获取摘要 - 尝试多种方式
-                                snippet = ''
-                                # 方式1: 查找p标签
-                                p_elem = item.find('p')
-                                if p_elem:
-                                    snippet = p_elem.get_text(strip=True)
-                                # 方式2: 查找div.b_caption
-                                if not snippet:
-                                    caption = item.find('div', class_='b_caption')
-                                    if caption:
-                                        snippet = caption.get_text(strip=True)
-                                # 方式3: 获取整个li的文本（排除标题）
-                                if not snippet:
-                                    item_text = item.get_text(separator=' ', strip=True)
-                                    if len(item_text) > len(title):
-                                        snippet = item_text[len(title):].strip()[:200]
-                                
-                                # 清理摘要中的多余空格
-                                snippet = re.sub(r'\s+', ' ', snippet)
-                                
-                                results.append({
-                                    'title': title,
-                                    'url': url,
-                                    'snippet': snippet[:200] if snippet else '',
-                                    'type': 'bing_result'
-                                })
+                            else:
+                                continue
+                        else:
+                            # 备用：直接找第一个链接
+                            link_elem = item.find('a', href=True)
+                            if not link_elem:
+                                continue
+                            title = link_elem.get_text(strip=True)
+                            url = link_elem.get('href', '')
+                        
+                        # 获取摘要
+                        snippet = ''
+                        p_elem = item.find('p')
+                        if p_elem:
+                            snippet = p_elem.get_text(strip=True)
+                        if not snippet:
+                            caption = item.find('div', class_=re.compile(r'caption'))
+                            if caption:
+                                snippet = caption.get_text(strip=True)
+                        if not snippet:
+                            item_text = item.get_text(separator=' ', strip=True)
+                            if len(item_text) > len(title):
+                                snippet = item_text[len(title):].strip()[:200]
+                        
+                        snippet = re.sub(r'\s+', ' ', snippet)
+                        
+                        if url and title:
+                            results.append({
+                                'title': title,
+                                'url': url,
+                                'snippet': snippet[:200] if snippet else '',
+                                'type': 'bing_result'
+                            })
                     
                     return results
         except Exception as e:
             logger.error(f"必应搜索错误: {e}")
+            return []
+    
+    async def search_bing_html(self, query: str, max_results: int = 10) -> list:
+        """使用Bing的HTML接口作为备用"""
+        try:
+            # 使用 Bing 的 HTML 接口
+            url = f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results}&mkt=en-US"
+            
+            async with self.session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    results = []
+                    
+                    # 查找搜索结果
+                    for item in soup.find_all('h2'):
+                        link = item.find('a')
+                        if link and link.get('href', '').startswith('http'):
+                            title = link.get_text(strip=True)
+                            url = link.get('href', '')
+                            
+                            # 找关联的摘要
+                            snippet = ''
+                            next_elem = item.find_next_sibling()
+                            if next_elem:
+                                p = next_elem.find('p')
+                                if p:
+                                    snippet = p.get_text(strip=True)
+                            
+                            results.append({
+                                'title': title,
+                                'url': url,
+                                'snippet': snippet[:200] if snippet else '',
+                                'type': 'bing_html_result'
+                            })
+                            
+                            if len(results) >= max_results:
+                                break
+                    
+                    return results
+        except Exception as e:
+            logger.error(f"Bing HTML备用搜索错误: {e}")
+            return []
+    
+    async def search_google(self, query: str, max_results: int = 10) -> list:
+        """使用Google搜索"""
+        try:
+            url = f"https://www.google.com/search?q={quote_plus(query)}&num={max_results}"
+            
+            async with self.session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    
+                    # 检测是否被阻止
+                    if "unusual traffic" in html.lower() or "captcha" in html.lower() or "solve the challenge" in html.lower():
+                        logger.warning("Google返回了验证码或流量异常页面")
+                        return []
+                    
+                    soup = BeautifulSoup(html, 'html.parser')
+                    results = []
+                    
+                    # Google搜索结果在 <div class="g"> 或 <div class="MjjYud"> 中
+                    # 新版Google使用不同的结构
+                    g_results = soup.find_all('div', class_=re.compile(r'^g$|^g和尚|^ZINbbc'))
+                    
+                    if not g_results:
+                        # 尝试其他选择器
+                        g_results = soup.find_all('div', class_='MjjYud')
+                    
+                    if not g_results:
+                        # 旧版结构
+                        g_results = soup.find_all('div', class_='g')
+                    
+                    for item in g_results[:max_results]:
+                        # 查找标题和链接
+                        title_elem = item.find('h3')
+                        if not title_elem:
+                            title_elem = item.find('div', class_='BNeawe')
+                        
+                        if title_elem:
+                            link_elem = title_elem.find('a') if title_elem.name == 'h3' else title_elem.find('a')
+                            if link_elem:
+                                title = link_elem.get_text(strip=True)
+                                url = link_elem.get('href', '')
+                                
+                                # 跳过 Google 内部链接
+                                if not url.startswith('http') or 'google.com' in url:
+                                    continue
+                            else:
+                                continue
+                        else:
+                            continue
+                        
+                        # 获取摘要
+                        snippet = ''
+                        snippet_elem = item.find('div', class_=re.compile(r'BNeawe|s|st'))
+                        if snippet_elem:
+                            snippet = snippet_elem.get_text(strip=True)
+                        if not snippet:
+                            # 备用：找所有文本
+                            text_parts = item.find_all('div')
+                            for part in text_parts:
+                                text = part.get_text(strip=True)
+                                if text and len(text) > 20 and text != title:
+                                    snippet = text
+                                    break
+                        
+                        snippet = re.sub(r'\s+', ' ', snippet)[:200]
+                        
+                        if url and title:
+                            results.append({
+                                'title': title,
+                                'url': url,
+                                'snippet': snippet,
+                                'type': 'google_result'
+                            })
+                    
+                    return results
+        except Exception as e:
+            logger.error(f"Google搜索错误: {e}")
+            return []
+    
+    async def search_google_html(self, query: str, max_results: int = 10) -> list:
+        """使用Google的HTML接口作为备用"""
+        try:
+            url = f"https://www.google.com/search?q={quote_plus(query)}&num={max_results}&hl=en-US"
+            
+            async with self.session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    results = []
+                    
+                    # 查找所有包含URL的链接
+                    for link in soup.find_all('a', href=True):
+                        href = link.get('href', '')
+                        # 只处理搜索结果链接
+                        if href.startswith('/url?q='):
+                            url = href[7:].split('&')[0]  # 提取实际URL
+                            if 'google.com' in url:
+                                continue
+                            
+                            # 获取链接文本作为标题
+                            title = link.get_text(strip=True)
+                            if not title or len(title) < 3:
+                                # 尝试找子元素
+                                span = link.find('span')
+                                if span:
+                                    title = span.get_text(strip=True)
+                            
+                            if title and len(title) > 3 and url.startswith('http'):
+                                results.append({
+                                    'title': title,
+                                    'url': url,
+                                    'snippet': '',
+                                    'type': 'google_html_result'
+                                })
+                                
+                                if len(results) >= max_results:
+                                    break
+                    
+                    return results
+        except Exception as e:
+            logger.error(f"Google HTML备用搜索错误: {e}")
             return []
     
     async def get_page_content(self, url: str) -> str:
@@ -264,7 +470,7 @@ async def handle_list_tools() -> list[Tool]:
                     "search_engine": {
                         "type": "string",
                         "description": "搜索引擎选择",
-                        "enum": ["duckduckgo", "bing", "both"],
+                        "enum": ["duckduckgo", "bing", "google", "both"],
                         "default": "both"
                     }
                 },
@@ -317,6 +523,14 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 bing_results = await searcher.search_bing(query, max_results)
                 results.extend(bing_results)
             
+            if search_engine in ["google", "both"]:
+                # Google搜索
+                google_results = await searcher.search_google(query, max_results)
+                if len(google_results) < max_results:
+                    html_results = await searcher.search_google_html(query, max_results - len(google_results))
+                    google_results.extend(html_results)
+                results.extend(google_results)
+            
             # 如果选择both，限制总结果数量
             if search_engine == "both":
                 results = results[:max_results]
@@ -337,7 +551,8 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             search_engines_used = {
                 "duckduckgo": "DuckDuckGo",
                 "bing": "必应",
-                "both": "DuckDuckGo + 必应"
+                "google": "Google",
+                "both": "DuckDuckGo + 必应 + Google"
             }
             
             response_text = f"搜索查询: {query}\n搜索引擎: {search_engines_used[search_engine]}\n\n" + "\n".join(formatted_results)
