@@ -5,6 +5,7 @@ MCP Web Search Server
 """
 
 import asyncio
+import functools
 import json
 import logging
 from typing import Any, Sequence
@@ -34,11 +35,41 @@ server = Server("web-search-server")
 class WebSearcher:
     """网页搜索器类"""
     
+    # 类级别的缓存（搜索结果缓存）
+    _search_cache: dict = {}
+    _cache_max_size: int = 100
+    
     def __init__(self):
         self.session = None
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
+    
+    @staticmethod
+    def _get_cache_key(query: str, engine: str, max_results: int) -> str:
+        """生成缓存键"""
+        return f"{engine}:{query}:{max_results}"
+    
+    @staticmethod
+    def _get_from_cache(key: str) -> list | None:
+        """从缓存获取结果"""
+        return WebSearcher._search_cache.get(key)
+    
+    @staticmethod
+    def _set_to_cache(key: str, results: list) -> None:
+        """设置缓存结果"""
+        # 简单LRU：超过最大 size 时清除最早的一半
+        if len(WebSearcher._search_cache) >= WebSearcher._cache_max_size:
+            # 清除一半缓存
+            keys_to_remove = list(WebSearcher._search_cache.keys())[:WebSearcher._cache_max_size // 2]
+            for k in keys_to_remove:
+                del WebSearcher._search_cache[k]
+        WebSearcher._search_cache[key] = results
+    
+    @staticmethod
+    def clear_cache() -> None:
+        """清空搜索缓存"""
+        WebSearcher._search_cache.clear()
     
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(headers=self.headers)
@@ -56,7 +87,17 @@ class WebSearcher:
             
             async with self.session.get(url) as response:
                 if response.status == 200:
-                    data = await response.json()
+                    # 尝试获取文本，手动解析JSON
+                    text = await response.text()
+                    try:
+                        # 尝试解析JSON
+                        import json
+                        data = json.loads(text)
+                    except json.JSONDecodeError:
+                        # 如果JSON解析失败，尝试从JavaScript中提取
+                        logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
+                        return []
+                    
                     results = []
                     
                     # 处理即时答案
@@ -120,10 +161,10 @@ class WebSearcher:
     async def search_bing(self, query: str, max_results: int = 10) -> list:
         """使用必应搜索"""
         try:
-            # 必应搜索URL
+            # 必应搜索URL - 使用更完整的 headers 来避免重定向
             url = f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results}"
             
-            async with self.session.get(url) as response:
+            async with self.session.get(url, allow_redirects=True) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, 'html.parser')
@@ -142,9 +183,22 @@ class WebSearcher:
                                 title = link_elem.get_text(strip=True)
                                 url = link_elem.get('href', '')
                                 
-                                # 获取摘要
-                                snippet_elem = item.find('p') or item.find('div', class_='b_caption')
-                                snippet = snippet_elem.get_text(strip=True) if snippet_elem else ''
+                                # 获取摘要 - 尝试多种方式
+                                snippet = ''
+                                # 方式1: 查找p标签
+                                p_elem = item.find('p')
+                                if p_elem:
+                                    snippet = p_elem.get_text(strip=True)
+                                # 方式2: 查找div.b_caption
+                                if not snippet:
+                                    caption = item.find('div', class_='b_caption')
+                                    if caption:
+                                        snippet = caption.get_text(strip=True)
+                                # 方式3: 获取整个li的文本（排除标题）
+                                if not snippet:
+                                    item_text = item.get_text(separator=' ', strip=True)
+                                    if len(item_text) > len(title):
+                                        snippet = item_text[len(title):].strip()[:200]
                                 
                                 # 清理摘要中的多余空格
                                 snippet = re.sub(r'\s+', ' ', snippet)
@@ -152,7 +206,7 @@ class WebSearcher:
                                 results.append({
                                     'title': title,
                                     'url': url,
-                                    'snippet': snippet,
+                                    'snippet': snippet[:200] if snippet else '',
                                     'type': 'bing_result'
                                 })
                     
