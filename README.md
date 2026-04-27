@@ -12,8 +12,6 @@ A free, API-key-free web search MCP (Model Context Protocol) server supporting D
 - 📄 **Web Content Fetching**: Get text content from any webpage
 - 🚀 **Async Processing**: High-performance asyncio-based async handling
 - 🛡️ **Secure & Private**: No external API keys needed, protects privacy
-- 🌐 **Multiple Search Methods**: API and HTML search modes
-- ⚡ **Flexible Choice**: Use single engine or combine multiple
 
 ## Installation
 
@@ -37,21 +35,7 @@ pip install git+https://github.com/HughesCuit/heventure-search-mcp.git
 python -m server
 ```
 
-### Manual
-
-```bash
-git clone https://github.com/HughesCuit/heventure-search-mcp.git
-cd heventure-search-mcp
-pip install -r requirements.txt
-```
-
 ## Usage
-
-### Run Server Directly
-
-```bash
-python server.py
-```
 
 ### MCP Client Config
 
@@ -66,7 +50,7 @@ python server.py
 }
 ```
 
-### Trae AI Configuration
+### Trae AI
 
 ```json
 {
@@ -81,7 +65,7 @@ python server.py
 
 ## Available Tools
 
-### 1. web_search
+### web_search
 
 Search web content with multiple engines.
 
@@ -103,9 +87,9 @@ Search web content with multiple engines.
 }
 ```
 
-### 2. get_webpage_content
+### get_webpage_content
 
-Get text content from a specified webpage.
+Get text content from a webpage.
 
 **Parameters:**
 - `url` (string, required): Target webpage URL
@@ -117,85 +101,11 @@ Get text content from a specified webpage.
 }
 ```
 
-## Technical Details
-
-### Search Engines
-
-| Engine | Features |
-|--------|----------|
-| DuckDuckGo | Free API, Privacy-first, Instant answers |
-| Bing | Rich results, High quality, Good complement |
-| Google | Comprehensive results, Wide coverage |
-
-### Search Strategy
-
-1. **DuckDuckGo**: API first, fallback to HTML parsing
-2. **Bing**: HTML page parsing
-3. **Google**: HTML parsing with anti-captcha detection
-4. **Combined**: Merge and dedupe results from all engines
-
-### Content Extraction
-
-- BeautifulSoup for HTML parsing
-- Auto-remove script and style tags
-- Clean and format text content
-- Limit length to avoid oversized responses
-
-## Configuration
-
-### User Agent
-
-```python
-'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-```
-
-### Limits
-
-- Content max length: 2000 characters
-- Max search results: 20
-
 ## Error Handling
 
 - Automatic retry on network failure
 - Graceful degradation on parse errors
-- Detailed error logging
 - User-friendly error messages
-
-## Development
-
-### Local Development
-
-```bash
-git clone https://github.com/HughesCuit/heventure-search-mcp.git
-cd heventure-search-mcp
-pip install -e .
-
-# Run tests
-python -m pytest tests/
-
-# Run benchmark
-python benchmark.py
-```
-
-### Publish to PyPI
-
-```bash
-# Publish to TestPyPI
-python publish.py test
-
-# Publish to PyPI
-python publish.py prod
-
-# Build only
-python publish.py build
-```
-
-**Before publishing:**
-
-1. Configure PyPI API Token (see `~/.pypirc`)
-2. Update version in `pyproject.toml`
-3. Update `CHANGELOG.md`
-4. Ensure all tests pass
 
 ## License
 
