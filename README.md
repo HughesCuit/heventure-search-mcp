@@ -1,115 +1,6 @@
-<details>
-<summary><b>点击切换到中文</b></summary>
-
-# MCP Web Search Server
-
-一个免费的、无需API key的网页搜索MCP（Model Context Protocol）服务器，支持DuckDuckGo、必应和Google搜索引擎。
-
-## 功能特性
-
-- 🔍 **多引擎搜索**: 支持DuckDuckGo、必应、Google，无需API key
-- 📄 **网页内容获取**: 获取指定网页的文本内容
-- 🚀 **异步处理**: 基于asyncio的高性能异步处理
-- 🛡️ **安全可靠**: 不需要任何外部API密钥，保护隐私
-- 🌐 **多种搜索方式**: 支持API和HTML两种搜索方式
-- ⚡ **灵活选择**: 可选择单一搜索引擎或组合使用
-
-## 安装方式
-
-### PyPI（推荐）
-
-```bash
-pip install heventure-search-mcp
-heventure-search-mcp
-```
-
-### uvx
-
-```bash
-uvx heventure-search-mcp
-```
-
-### 源码安装
-
-```bash
-pip install git+https://github.com/HughesCuit/heventure-search-mcp.git
-python -m server
-```
-
-## 使用方法
-
-### MCP客户端配置
-
-```json
-{
-  "mcpServers": {
-    "web-search": {
-      "command": "python",
-      "args": ["/path/to/server.py"]
-    }
-  }
-}
-```
-
-### Trae AI配置
-
-```json
-{
-  "mcpServers": {
-    "heventure-search-mcp": {
-      "command": "uvx",
-      "args": ["heventure-search-mcp"]
-    }
-  }
-}
-```
-
-## 可用工具
-
-### 1. web_search
-
-搜索网页内容，支持多种搜索引擎
-
-**参数:**
-- `query` (string, 必需): 搜索查询词
-- `max_results` (integer, 可选): 最大结果数量 (默认: 10)
-- `search_engine` (string, 可选): 搜索引擎 (默认: "both")
-  - `"duckduckgo"`: DuckDuckGo
-  - `"bing"`: 必应
-  - `"google"`: Google
-  - `"both"`: 所有引擎
-
-### 2. get_webpage_content
-
-获取指定网页的文本内容
-
-**参数:**
-- `url` (string, 必需): 网页URL
-
-## 技术实现
-
-| 引擎 | 特点 |
-|------|------|
-| DuckDuckGo | 免费API、隐私保护、即时答案 |
-| 必应 | 丰富结果、高质量 |
-| Google | 全面结果、广泛覆盖 |
-
-## 开发
-
-```bash
-git clone https://github.com/HughesCuit/heventure-search-mcp.git
-cd heventure-search-mcp
-pip install -e .
-python -m pytest tests/
-```
-
-## 许可证
-
-MIT License
+[**中文**](./README_CN.md) | English
 
 ---
-
-</details>
 
 # MCP Web Search Server
 
@@ -146,7 +37,21 @@ pip install git+https://github.com/HughesCuit/heventure-search-mcp.git
 python -m server
 ```
 
+### Manual
+
+```bash
+git clone https://github.com/HughesCuit/heventure-search-mcp.git
+cd heventure-search-mcp
+pip install -r requirements.txt
+```
+
 ## Usage
+
+### Run Server Directly
+
+```bash
+python server.py
+```
 
 ### MCP Client Config
 
@@ -182,12 +87,21 @@ Search web content with multiple engines.
 
 **Parameters:**
 - `query` (string, required): Search query
-- `max_results` (integer, optional): Max results (default: 10)
+- `max_results` (integer, optional): Max results (default: 10, range: 1-20)
 - `search_engine` (string, optional): Engine choice (default: "both")
   - `"duckduckgo"`: DuckDuckGo only
   - `"bing"`: Bing only
   - `"google"`: Google only
   - `"both"`: All engines combined
+
+**Example:**
+```json
+{
+  "query": "Python tutorial",
+  "max_results": 5,
+  "search_engine": "both"
+}
+```
 
 ### 2. get_webpage_content
 
@@ -196,23 +110,97 @@ Get text content from a specified webpage.
 **Parameters:**
 - `url` (string, required): Target webpage URL
 
+**Example:**
+```json
+{
+  "url": "https://example.com"
+}
+```
+
 ## Technical Details
+
+### Search Engines
 
 | Engine | Features |
 |--------|----------|
 | DuckDuckGo | Free API, Privacy-first, Instant answers |
-| Bing | Rich results, High quality |
+| Bing | Rich results, High quality, Good complement |
 | Google | Comprehensive results, Wide coverage |
 
+### Search Strategy
+
+1. **DuckDuckGo**: API first, fallback to HTML parsing
+2. **Bing**: HTML page parsing
+3. **Google**: HTML parsing with anti-captcha detection
+4. **Combined**: Merge and dedupe results from all engines
+
+### Content Extraction
+
+- BeautifulSoup for HTML parsing
+- Auto-remove script and style tags
+- Clean and format text content
+- Limit length to avoid oversized responses
+
+## Configuration
+
+### User Agent
+
+```python
+'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+```
+
+### Limits
+
+- Content max length: 2000 characters
+- Max search results: 20
+
+## Error Handling
+
+- Automatic retry on network failure
+- Graceful degradation on parse errors
+- Detailed error logging
+- User-friendly error messages
+
 ## Development
+
+### Local Development
 
 ```bash
 git clone https://github.com/HughesCuit/heventure-search-mcp.git
 cd heventure-search-mcp
 pip install -e .
+
+# Run tests
 python -m pytest tests/
+
+# Run benchmark
+python benchmark.py
 ```
+
+### Publish to PyPI
+
+```bash
+# Publish to TestPyPI
+python publish.py test
+
+# Publish to PyPI
+python publish.py prod
+
+# Build only
+python publish.py build
+```
+
+**Before publishing:**
+
+1. Configure PyPI API Token (see `~/.pypirc`)
+2. Update version in `pyproject.toml`
+3. Update `CHANGELOG.md`
+4. Ensure all tests pass
 
 ## License
 
 MIT License
+
+## Contributing
+
+Issues and Pull Requests are welcome!
