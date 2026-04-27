@@ -6,6 +6,7 @@ MCP Web Search Server
 
 import asyncio
 import logging
+import os
 import re
 from urllib.parse import quote_plus
 
@@ -26,8 +27,17 @@ from mcp.types import (
 )
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("web-search-server")
+
+# SOCKS 代理支持
+SOCKS_PROXY = os.environ.get("SOCKS_PROXY") or os.environ.get("socks_proxy")
+aiohttp_socks = None
+if SOCKS_PROXY:
+    try:
+        import aiohttp_socks
+        logger.info(f"SOCKS proxy enabled: {SOCKS_PROXY}")
+    except ImportError:
+        logger.warning("aiohttp-socks not installed, SOCKS proxy unavailable")
 
 server = Server("web-search-server")
 
@@ -88,12 +98,19 @@ class WebSearcher:
     async def __aenter__(self):
         # 配置SSL以避免验证问题
         # 禁用SSL验证用于开发环境
-        connector = aiohttp.TCPConnector(
-            ssl=False,  # 开发环境禁用SSL验证
-            limit=10,
-            force_close=False,
-            enable_cleanup_closed=True
-        )
+        
+        # SOCKS 代理支持
+        if SOCKS_PROXY and aiohttp_socks:
+            connector = aiohttp_socks.ProxyConnector.from_url(SOCKS_PROXY, ssl=False)
+            logger.info(f"SOCKS connector created: {SOCKS_PROXY}")
+        else:
+            connector = aiohttp.TCPConnector(
+                ssl=False,  # 开发环境禁用SSL验证
+                limit=10,
+                force_close=False,
+                enable_cleanup_closed=True
+            )
+        
         self.session = aiohttp.ClientSession(
             headers=self.headers,
             connector=connector,
@@ -112,7 +129,7 @@ class WebSearcher:
             url = f"https://api.duckduckgo.com/?q={quote_plus(query)}&format=json&no_html=1&skip_disambig=1"
 
             async with self.session.get(url) as response:
-                if response.status == 200:
+                if response.status in (200, 202):
                     # 尝试获取文本，手动解析JSON
                     text = await response.text()
                     try:
@@ -137,7 +154,7 @@ class WebSearcher:
 
                     results = []
 
-                    # 处理即时答案
+                    # 处理即时答案 (Answer)
                     if data.get("Answer"):
                         results.append(
                             {
@@ -145,6 +162,17 @@ class WebSearcher:
                                 "url": data.get("AnswerURL", ""),
                                 "snippet": data.get("Answer", ""),
                                 "type": "instant_answer",
+                            }
+                        )
+
+                    # 处理摘要 (Abstract)
+                    if data.get("Abstract") and len(results) < max_results:
+                        results.append(
+                            {
+                                "title": data.get("Heading", "DuckDuckGo摘要"),
+                                "url": data.get("AbstractURL", ""),
+                                "snippet": data.get("Abstract", ""),
+                                "type": "abstract",
                             }
                         )
 
