@@ -54,6 +54,7 @@ class WebSearcher:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate",  # 不请求 brotli，避免解码问题
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
         "Sec-Fetch-Dest": "document",
@@ -114,8 +115,13 @@ class WebSearcher:
         self.session = aiohttp.ClientSession(
             headers=self.headers,
             connector=connector,
-            trust_env=True  # 信任环境变量中的代理配置
+            trust_env=True,  # 信任环境变量中的代理配置
         )
+        # 确保 brotli 可用用于解码
+        try:
+            import brotli
+        except ImportError:
+            pass
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -610,32 +616,45 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             return [TextContent(type="text", text="错误：搜索查询不能为空")]
 
         async with WebSearcher() as searcher:
+            # 并发执行多个搜索引擎搜索
+            async def search_with_fallback(engine: str):
+                """单个搜索引擎搜索，带备用方法"""
+                if engine == "duckduckgo":
+                    ddg_results = await searcher.search_duckduckgo(query, max_results)
+                    if len(ddg_results) < max_results:
+                        html_results = await searcher.search_html_duckduckgo(
+                            query, max_results - len(ddg_results)
+                        )
+                        ddg_results.extend(html_results)
+                    return ddg_results
+                elif engine == "bing":
+                    return await searcher.search_bing(query, max_results)
+                elif engine == "google":
+                    google_results = await searcher.search_google(query, max_results)
+                    if len(google_results) < max_results:
+                        html_results = await searcher.search_google_html(
+                            query, max_results - len(google_results)
+                        )
+                        google_results.extend(html_results)
+                    return google_results
+                return []
+
+            # 根据选择的搜索引擎构建任务列表
+            engines = {
+                "duckduckgo": ["duckduckgo"],
+                "bing": ["bing"],
+                "google": ["google"],
+                "both": ["duckduckgo", "bing", "google"],
+            }.get(search_engine, ["duckduckgo"])
+
+            # 并发执行所有搜索
+            tasks = [search_with_fallback(e) for e in engines]
+            results_list = await asyncio.gather(*tasks)
+
+            # 合并结果
             results = []
-
-            if search_engine in ["duckduckgo", "both"]:
-                # DuckDuckGo搜索
-                ddg_results = await searcher.search_duckduckgo(query, max_results)
-                if len(ddg_results) < max_results:
-                    html_results = await searcher.search_html_duckduckgo(
-                        query, max_results - len(ddg_results)
-                    )
-                    ddg_results.extend(html_results)
-                results.extend(ddg_results)
-
-            if search_engine in ["bing", "both"]:
-                # 必应搜索
-                bing_results = await searcher.search_bing(query, max_results)
-                results.extend(bing_results)
-
-            if search_engine in ["google", "both"]:
-                # Google搜索
-                google_results = await searcher.search_google(query, max_results)
-                if len(google_results) < max_results:
-                    html_results = await searcher.search_google_html(
-                        query, max_results - len(google_results)
-                    )
-                    google_results.extend(html_results)
-                results.extend(google_results)
+            for r in results_list:
+                results.extend(r)
 
             # 如果选择both，限制总结果数量
             if search_engine == "both":
