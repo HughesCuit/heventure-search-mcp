@@ -4,14 +4,14 @@
 
 # MCP Web Search Server
 
-一个免费的、无需API key的网页搜索MCP（Model Context Protocol）服务器，支持DuckDuckGo、必应和Google搜索引擎。
+一个免费的、无需API key的网页搜索MCP（Model Context Protocol）服务器，支持DuckDuckGo、必应，以及可选的 SerpAPI/Tavily 以提升搜索质量。
 
 ## 功能特性
 
-- 🔍 **多引擎搜索**: 支持DuckDuckGo、必应、Google，无需API key
+- 🔍 **多引擎搜索**: DuckDuckGo + 必应（免费，无需 API Key）
+- 🔑 **可选 API Key**: 配置 SerpAPI 或 Tavily 提升搜索质量
 - 📄 **网页内容获取**: 获取指定网页的文本内容
 - 🚀 **异步处理**: 基于asyncio的高性能异步处理
-- 🛡️ **安全可靠**: 不需要任何外部API密钥，保护隐私
 
 ## 安装方式
 
@@ -75,8 +75,21 @@ python -m server
 - `search_engine` (string, 可选): 搜索引擎选择 (默认: "both")
   - `"duckduckgo"`: 仅使用DuckDuckGo搜索
   - `"bing"`: 仅使用必应搜索
-  - `"google"`: 仅使用Google搜索
-  - `"both"`: 同时使用所有搜索引擎
+  - `"both"`: DuckDuckGo + 必应
+
+### 可选 API Key（提升搜索质量）
+
+您可以通过设置环境变量来启用付费搜索服务：
+
+```bash
+# SerpAPI（通过 API 获取 Google 搜索结果，每月免费 100 次）
+export SERPAPI_KEY="your_serpapi_key"
+
+# Tavily（AI 优化搜索，每月免费 1000 次）
+export TAVILY_API_KEY="your_tavily_api_key"
+```
+
+配置 API Key 后，系统会自动与免费引擎一起使用以提升搜索质量。
 
 **示例:**
 ```json

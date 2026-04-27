@@ -29,6 +29,10 @@ from mcp.types import (
 # 配置日志
 logger = logging.getLogger("web-search-server")
 
+# API Keys 配置
+SERPAPI_KEY = os.environ.get("SERPAPI_KEY")  # SerpAPI API Key (https://serpapi.com)
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")  # Tavily API Key (https://tavily.com)
+
 # SOCKS 代理支持
 SOCKS_PROXY = os.environ.get("SOCKS_PROXY") or os.environ.get("socks_proxy")
 aiohttp_socks = None
@@ -387,148 +391,106 @@ class WebSearcher:
             logger.error(f"Bing HTML备用搜索错误: {e}")
             return []
 
-    async def search_google(self, query: str, max_results: int = 10) -> list:
-        """使用Google搜索"""
+    # ==================== API Key 可选引擎 ====================
+    
+    async def search_serpapi(self, query: str, max_results: int = 10) -> list:
+        """使用 SerpAPI 搜索（需要 API Key）
+        文档: https://serpapi.com/search-api
+        免费额度: 每月 100 次
+        """
         try:
-            url = (
-                f"https://www.google.com/search?q={quote_plus(query)}&num={max_results}"
-            )
-
+            if not SERPAPI_KEY:
+                logger.warning("SerpAPI Key 未配置")
+                return []
+            
+            import aiohttp
+            
+            url = "https://serpapi.com/search"
+            params = {
+                "q": query,
+                "api_key": SERPAPI_KEY,
+                "num": max_results,
+                "engine": "google",
+            }
+            
             async with self.session.get(
-                url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)
+                url, params=params, timeout=aiohttp.ClientTimeout(total=30)
             ) as response:
                 if response.status == 200:
-                    html = await response.text()
-
-                    # 检测是否被阻止
-                    if (
-                        "unusual traffic" in html.lower()
-                        or "captcha" in html.lower()
-                        or "solve the challenge" in html.lower()
-                    ):
-                        logger.warning("Google返回了验证码或流量异常页面")
-                        return []
-
-                    soup = BeautifulSoup(html, "html.parser")
+                    data = await response.json()
                     results = []
-
-                    # Google搜索结果在 <div class="g"> 或 <div class="MjjYud"> 中
-                    # 新版Google使用不同的结构
-                    g_results = soup.find_all(
-                        "div", class_=re.compile(r"^g$|^g和尚|^ZINbbc")
-                    )
-
-                    if not g_results:
-                        # 尝试其他选择器
-                        g_results = soup.find_all("div", class_="MjjYud")
-
-                    if not g_results:
-                        # 旧版结构
-                        g_results = soup.find_all("div", class_="g")
-
-                    for item in g_results[:max_results]:
-                        # 查找标题和链接
-                        title_elem = item.find("h3")
-                        if not title_elem:
-                            title_elem = item.find("div", class_="BNeawe")
-
-                        if title_elem:
-                            link_elem = (
-                                title_elem.find("a")
-                                if title_elem.name == "h3"
-                                else title_elem.find("a")
-                            )
-                            if link_elem:
-                                title = link_elem.get_text(strip=True)
-                                url = link_elem.get("href", "")
-
-                                # 跳过 Google 内部链接
-                                if not url.startswith("http") or "google.com" in url:
-                                    continue
-                            else:
-                                continue
-                        else:
-                            continue
-
-                        # 获取摘要
-                        snippet = ""
-                        snippet_elem = item.find(
-                            "div", class_=re.compile(r"BNeawe|s|st")
-                        )
-                        if snippet_elem:
-                            snippet = snippet_elem.get_text(strip=True)
-                        if not snippet:
-                            # 备用：找所有文本
-                            text_parts = item.find_all("div")
-                            for part in text_parts:
-                                text = part.get_text(strip=True)
-                                if text and len(text) > 20 and text != title:
-                                    snippet = text
-                                    break
-
-                        snippet = re.sub(r"\s+", " ", snippet)[:200]
-
-                        if url and title:
-                            results.append(
-                                {
-                                    "title": title,
-                                    "url": url,
-                                    "snippet": snippet,
-                                    "type": "google_result",
-                                }
-                            )
-
+                    
+                    # 解析 SerpAPI 结果
+                    organic_results = data.get("organic_results", [])
+                    for item in organic_results[:max_results]:
+                        results.append({
+                            "title": item.get("title", ""),
+                            "url": item.get("link", ""),
+                            "snippet": item.get("snippet", ""),
+                            "type": "serpapi_result",
+                        })
+                    
+                    logger.info(f"SerpAPI 返回 {len(results)} 条结果")
                     return results
+                elif response.status == 403:
+                    logger.error("SerpAPI API Key 无效或配额用尽")
+                    return []
+                else:
+                    logger.error(f"SerpAPI 请求失败: {response.status}")
+                    return []
         except Exception as e:
-            logger.error(f"Google搜索错误: {e}")
+            logger.error(f"SerpAPI 搜索错误: {e}")
             return []
 
-    async def search_google_html(self, query: str, max_results: int = 10) -> list:
-        """使用Google的HTML接口作为备用"""
+    async def search_tavily(self, query: str, max_results: int = 10) -> list:
+        """使用 Tavily 搜索（需要 API Key）
+        文档: https://docs.tavily.com/
+        免费额度: 每月 1000 次
+        """
         try:
-            url = f"https://www.google.com/search?q={quote_plus(query)}&num={max_results}&hl=en-US"
-
-            async with self.session.get(
-                url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)
+            if not TAVILY_API_KEY:
+                logger.warning("Tavily API Key 未配置")
+                return []
+            
+            import aiohttp
+            
+            url = "https://api.tavily.com/search"
+            payload = {
+                "query": query,
+                "api_key": TAVILY_API_KEY,
+                "max_results": max_results,
+                "include_answer": False,
+                "include_raw_content": False,
+                "include_images": False,
+            }
+            
+            async with self.session.post(
+                url, json=payload, timeout=aiohttp.ClientTimeout(total=30)
             ) as response:
                 if response.status == 200:
-                    html = await response.text()
-                    soup = BeautifulSoup(html, "html.parser")
+                    data = await response.json()
                     results = []
-
-                    # 查找所有包含URL的链接
-                    for link in soup.find_all("a", href=True):
-                        href = link.get("href", "")
-                        # 只处理搜索结果链接
-                        if href.startswith("/url?q="):
-                            url = href[7:].split("&")[0]  # 提取实际URL
-                            if "google.com" in url:
-                                continue
-
-                            # 获取链接文本作为标题
-                            title = link.get_text(strip=True)
-                            if not title or len(title) < 3:
-                                # 尝试找子元素
-                                span = link.find("span")
-                                if span:
-                                    title = span.get_text(strip=True)
-
-                            if title and len(title) > 3 and url.startswith("http"):
-                                results.append(
-                                    {
-                                        "title": title,
-                                        "url": url,
-                                        "snippet": "",
-                                        "type": "google_html_result",
-                                    }
-                                )
-
-                                if len(results) >= max_results:
-                                    break
-
+                    
+                    # 解析 Tavily 结果
+                    results_list = data.get("results", [])
+                    for item in results_list:
+                        results.append({
+                            "title": item.get("title", ""),
+                            "url": item.get("url", ""),
+                            "snippet": item.get("content", ""),
+                            "type": "tavily_result",
+                        })
+                    
+                    logger.info(f"Tavily 返回 {len(results)} 条结果")
                     return results
+                elif response.status == 401:
+                    logger.error("Tavily API Key 无效")
+                    return []
+                else:
+                    logger.error(f"Tavily 请求失败: {response.status}")
+                    return []
         except Exception as e:
-            logger.error(f"Google HTML备用搜索错误: {e}")
+            logger.error(f"Tavily 搜索错误: {e}")
             return []
 
     async def get_page_content(self, url: str) -> str:
@@ -565,7 +527,7 @@ async def handle_list_tools() -> list[Tool]:
     return [
         Tool(
             name="web_search",
-            description="搜索网页内容，支持DuckDuckGo和必应搜索引擎",
+            description="搜索网页内容，支持 DuckDuckGo、必应搜索引擎。可选配置 SerpAPI Key 或 Tavily API Key 提升搜索质量",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -580,7 +542,7 @@ async def handle_list_tools() -> list[Tool]:
                     "search_engine": {
                         "type": "string",
                         "description": "搜索引擎选择",
-                        "enum": ["duckduckgo", "bing", "google", "both"],
+                        "enum": ["duckduckgo", "bing", "both"],
                         "default": "both",
                     },
                 },
@@ -629,23 +591,27 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                     return ddg_results
                 elif engine == "bing":
                     return await searcher.search_bing(query, max_results)
-                elif engine == "google":
-                    google_results = await searcher.search_google(query, max_results)
-                    if len(google_results) < max_results:
-                        html_results = await searcher.search_google_html(
-                            query, max_results - len(google_results)
-                        )
-                        google_results.extend(html_results)
-                    return google_results
+                elif engine == "serpapi":
+                    return await searcher.search_serpapi(query, max_results)
+                elif engine == "tavily":
+                    return await searcher.search_tavily(query, max_results)
                 return []
-
+            
             # 根据选择的搜索引擎构建任务列表
+            # 优先级：免费引擎 -> API Key 增强引擎
             engines = {
                 "duckduckgo": ["duckduckgo"],
                 "bing": ["bing"],
-                "google": ["google"],
-                "both": ["duckduckgo", "bing", "google"],
+                "both": ["duckduckgo", "bing"],
             }.get(search_engine, ["duckduckgo"])
+            
+            # 如果有 SerpAPI Key，添加 SerpAPI 搜索（优先级最高）
+            if SERPAPI_KEY:
+                engines.append("serpapi")
+            
+            # 如果有 Tavily API Key，添加 Tavily 搜索
+            if TAVILY_API_KEY:
+                engines.append("tavily")
 
             # 并发执行所有搜索
             tasks = [search_with_fallback(e) for e in engines]
@@ -676,12 +642,22 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             search_engines_used = {
                 "duckduckgo": "DuckDuckGo",
                 "bing": "必应",
-                "google": "Google",
-                "both": "DuckDuckGo + 必应 + Google",
+                "both": "DuckDuckGo + 必应",
             }
+            
+            # 添加活跃的 API 引擎
+            active_engines = []
+            if SERPAPI_KEY:
+                active_engines.append("SerpAPI")
+            if TAVILY_API_KEY:
+                active_engines.append("Tavily")
+            
+            engine_desc = search_engines_used.get(search_engine, "DuckDuckGo")
+            if active_engines:
+                engine_desc += " + " + " + ".join(active_engines)
 
             response_text = (
-                f"搜索查询: {query}\n搜索引擎: {search_engines_used[search_engine]}\n\n"
+                f"搜索查询: {query}\n搜索引擎: {engine_desc}\n\n"
                 + "\n".join(formatted_results)
             )
             return [TextContent(type="text", text=response_text)]
