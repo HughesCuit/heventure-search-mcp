@@ -39,6 +39,7 @@ aiohttp_socks = None
 if SOCKS_PROXY:
     try:
         import aiohttp_socks
+
         logger.info(f"SOCKS proxy enabled: {SOCKS_PROXY}")
     except ImportError:
         logger.warning("aiohttp-socks not installed, SOCKS proxy unavailable")
@@ -132,14 +133,22 @@ class WebSearcher:
         if self.session:
             await self.session.close()
 
-    async def _safe_get(self, url: str, max_redirects: int = 3, **kwargs) -> aiohttp.ClientResponse | None:
+    async def _safe_get(
+        self, url: str, max_redirects: int = 5, **kwargs
+    ) -> aiohttp.ClientResponse | None:
         """安全地发送HTTP GET请求，手动跟随重定向以避免无限循环
-        
+
         aiohttp 的默认重定向处理在某些站点（如 Bing）上会导致 TooManyRedirects 异常。
         此方法手动跟随重定向，限制重定向次数，并支持相对URL解析。
+
+        修复: 增加了 mkt 参数剥离逻辑，防止 Bing 的 mkt 参数导致的重定向循环
+        (bing.com ↔ cn.bing.com 通过 mkt=zh-CN 参数形成无限循环)
         """
+        from urllib.parse import parse_qs, urlencode, urlparse
+
         current_url = url
         redirect_count = 0
+        redirect_history = []
 
         while redirect_count <= max_redirects:
             try:
@@ -151,18 +160,33 @@ class WebSearcher:
                         location = response.headers.get("Location", "")
                         if not location:
                             return response
-                        redirect_count += 1
+
                         # 解析相对URL
                         if location.startswith("/"):
-                            from urllib.parse import urlparse
                             parsed = urlparse(current_url)
                             location = f"{parsed.scheme}://{parsed.netloc}{location}"
+
+                        # 剥离 mkt 参数以防止 Bing 重定向循环
+                        parsed = urlparse(location)
+                        qs = parse_qs(parsed.query)
+                        if "mkt" in qs:
+                            del qs["mkt"]
+                        new_query = urlencode(qs, doseq=True)
+                        location = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{new_query}".rstrip(
+                            "?"
+                        )
+
+                        # 检测重定向循环：如果同一个 URL 再次出现，说明进入了循环
+                        if location == current_url or location in redirect_history[-3:]:
+                            logger.debug(f"重定向循环检测到，URL: {location}")
+                            return response
+
+                        redirect_history.append(current_url)
+                        redirect_count += 1
                         current_url = location
                         logger.debug(f"Redirect {redirect_count}: {current_url}")
                         continue
                     # 非重定向响应，读取完整内容
-                    html = await response.read()
-                    # 创建新的响应对象模拟 complete response
                     return response
             except Exception as e:
                 logger.error(f"请求失败 {current_url}: {e}")
@@ -183,18 +207,24 @@ class WebSearcher:
                     text = await response.text()
                     try:
                         import json
+
                         data = json.loads(text)
                     except json.JSONDecodeError:
                         import json
                         import re
+
                         # 尝试从JavaScript中提取JSON对象
-                        match = re.search(r'\{.+\}', text, re.DOTALL)
+                        match = re.search(r"\{.+\}", text, re.DOTALL)
                         if match:
                             try:
                                 data = json.loads(match.group(0))
                             except json.JSONDecodeError:
-                                logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
-                                return await self.search_html_duckduckgo(query, max_results)
+                                logger.warning(
+                                    "DuckDuckGo API返回非JSON响应，尝试备用方法"
+                                )
+                                return await self.search_html_duckduckgo(
+                                    query, max_results
+                                )
                         else:
                             logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
                             return await self.search_html_duckduckgo(query, max_results)
@@ -245,7 +275,9 @@ class WebSearcher:
 
                     return results
                 else:
-                    logger.warning(f"DuckDuckGo API 返回非预期状态码: {response.status}")
+                    logger.warning(
+                        f"DuckDuckGo API 返回非预期状态码: {response.status}"
+                    )
                     return await self.search_html_duckduckgo(query, max_results)
         except Exception as e:
             logger.error(f"DuckDuckGo搜索错误: {e}")
@@ -288,7 +320,9 @@ class WebSearcher:
 
                     return results
                 else:
-                    logger.warning(f"DuckDuckGo HTML 返回非预期状态码: {response.status}")
+                    logger.warning(
+                        f"DuckDuckGo HTML 返回非预期状态码: {response.status}"
+                    )
                     return []
         except Exception as e:
             logger.error(f"DuckDuckGo HTML搜索错误: {e}")
@@ -296,20 +330,25 @@ class WebSearcher:
 
     async def search_bing(self, query: str, max_results: int = 10) -> list:
         """使用必应搜索
-        
+
         修复: 使用手动重定向处理避免 aiohttp TooManyRedirects 异常 (Bing 的重定向循环问题)
+        注意: 不在 URL 中使用 mkt 参数，因为 Bing 会通过 mkt=zh-CN 在 bing.com 和 cn.bing.com
+        之间形成无限重定向循环 (_safe_get 会自动剥离该参数)
         """
         try:
+            # 不使用 mkt 参数，避免 Bing 重定向循环问题
             url = (
-                f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results}&mkt=en-US"
+                f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results}"
             )
 
-            response = await self._safe_get(url, max_redirects=3)
+            response = await self._safe_get(url, max_redirects=5)
             if response is None or response.status != 200:
-                logger.warning(f"必应搜索失败: {response.status if response else 'None'}")
+                logger.warning(
+                    f"必应搜索失败: {response.status if response else 'None'}"
+                )
                 # 尝试 cn.bing.com 作为备用
                 cn_url = f"https://cn.bing.com/search?q={quote_plus(query)}&count={max_results}"
-                response = await self._safe_get(cn_url, max_redirects=3)
+                response = await self._safe_get(cn_url, max_redirects=5)
 
             if response is None:
                 return []
@@ -364,15 +403,13 @@ class WebSearcher:
                 title_elem = item.find("h2")
                 if not title_elem:
                     title_elem = item.find("a", class_=re.compile(r"title"))
-                
+
                 title = ""
                 url = ""
-                
+
                 if title_elem:
                     link_elem = (
-                        title_elem.find("a")
-                        if title_elem.name == "h2"
-                        else title_elem
+                        title_elem.find("a") if title_elem.name == "h2" else title_elem
                     )
                     if link_elem and link_elem.name == "a":
                         title = link_elem.get_text(strip=True)
@@ -405,7 +442,7 @@ class WebSearcher:
                 if not snippet:
                     item_text = item.get_text(separator=" ", strip=True)
                     if len(item_text) > len(title):
-                        snippet = item_text[len(title):].strip()[:200]
+                        snippet = item_text[len(title) :].strip()[:200]
 
                 snippet = re.sub(r"\s+", " ", snippet)
 
@@ -425,17 +462,19 @@ class WebSearcher:
 
     async def search_google(self, query: str, max_results: int = 10) -> list:
         """使用 Google 搜索（通过HTML页面解析）
-        
+
         注意: Google 可能会返回验证码或拒绝非浏览器请求，
         特别是在非桌面环境中。此方法为尽力而为，不保证始终可用。
         建议使用 DuckDuckGo 作为默认搜索引擎。
         """
         try:
-            params = urlencode({
-                "q": query,
-                "num": min(max_results, 10),
-                "hl": "en",
-            })
+            params = urlencode(
+                {
+                    "q": query,
+                    "num": min(max_results, 10),
+                    "hl": "en",
+                }
+            )
             google_headers = {
                 **self.headers,
                 "Accept-Language": "en-US,en;q=0.9",
@@ -452,7 +491,9 @@ class WebSearcher:
                 try:
                     # 使用 _safe_get 避免重定向问题
                     response = await self._safe_get(
-                        url, max_redirects=3, headers=google_headers,
+                        url,
+                        max_redirects=3,
+                        headers=google_headers,
                         timeout=aiohttp.ClientTimeout(total=10),
                     )
                     if response is None or response.status != 200:
@@ -462,17 +503,21 @@ class WebSearcher:
 
                     # 检测阻止
                     if not html or len(html) < 500:
-                        logger.warning(f"Google 返回了空白或过短的页面，跳过")
+                        logger.warning("Google 返回了空白或过短的页面，跳过")
                         continue
                     if "captcha" in html.lower():
-                        logger.warning(f"Google 返回了验证码页面，跳过")
+                        logger.warning("Google 返回了验证码页面，跳过")
                         continue
 
                     soup = BeautifulSoup(html, "html.parser")
                     results = []
 
                     # Google 搜索结果在 div#search 或 div#main 中
-                    search_div = soup.find("div", id="search") or soup.find("div", id="main") or soup
+                    search_div = (
+                        soup.find("div", id="search")
+                        or soup.find("div", id="main")
+                        or soup
+                    )
 
                     # 方法1: 从 h3 中提取（标准搜索结果）
                     for h3 in search_div.find_all("h3"):
@@ -486,6 +531,7 @@ class WebSearcher:
                         # 处理 Google 的 /url?q= 重定向链接
                         if href.startswith("/url?q="):
                             from urllib.parse import parse_qs, urlparse
+
                             parsed = urlparse(href)
                             qs = parse_qs(parsed.query)
                             href = qs.get("q", [href])[0]
@@ -506,20 +552,29 @@ class WebSearcher:
                             parent = parent.find_parent()
                             if parent is None:
                                 break
-                            for cls_pattern in [r"st|aCOpRe", r"VwiC3b", r"lEBKPb", r"BNeawe"]:
-                                snippet_div = parent.find("span", class_=re.compile(cls_pattern))
+                            for cls_pattern in [
+                                r"st|aCOpRe",
+                                r"VwiC3b",
+                                r"lEBKPb",
+                                r"BNeawe",
+                            ]:
+                                snippet_div = parent.find(
+                                    "span", class_=re.compile(cls_pattern)
+                                )
                                 if snippet_div:
                                     snippet = snippet_div.get_text(strip=True)
                                     break
                             if snippet:
                                 break
 
-                        results.append({
-                            "title": title,
-                            "url": href,
-                            "snippet": snippet[:300] if snippet else "",
-                            "type": "google_result",
-                        })
+                        results.append(
+                            {
+                                "title": title,
+                                "url": href,
+                                "snippet": snippet[:300] if snippet else "",
+                                "type": "google_result",
+                            }
+                        )
 
                         if len(results) >= max_results:
                             break
@@ -568,12 +623,14 @@ class WebSearcher:
                     # 解析 SerpAPI 结果
                     organic_results = data.get("organic_results", [])
                     for item in organic_results[:max_results]:
-                        results.append({
-                            "title": item.get("title", ""),
-                            "url": item.get("link", ""),
-                            "snippet": item.get("snippet", ""),
-                            "type": "serpapi_result",
-                        })
+                        results.append(
+                            {
+                                "title": item.get("title", ""),
+                                "url": item.get("link", ""),
+                                "snippet": item.get("snippet", ""),
+                                "type": "serpapi_result",
+                            }
+                        )
 
                     logger.info(f"SerpAPI 返回 {len(results)} 条结果")
                     return results
@@ -617,12 +674,14 @@ class WebSearcher:
                     # 解析 Tavily 结果
                     results_list = data.get("results", [])
                     for item in results_list:
-                        results.append({
-                            "title": item.get("title", ""),
-                            "url": item.get("url", ""),
-                            "snippet": item.get("content", ""),
-                            "type": "tavily_result",
-                        })
+                        results.append(
+                            {
+                                "title": item.get("title", ""),
+                                "url": item.get("url", ""),
+                                "snippet": item.get("content", ""),
+                                "type": "tavily_result",
+                            }
+                        )
 
                     logger.info(f"Tavily 返回 {len(results)} 条结果")
                     return results

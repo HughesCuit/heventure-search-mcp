@@ -6,7 +6,7 @@ MCP Web Search Server 基准测试报告生成器
 import datetime
 import json
 import os
-from typing import Any, Dict, List
+from typing import Any
 
 
 class BenchmarkReportGenerator:
@@ -16,7 +16,7 @@ class BenchmarkReportGenerator:
         self.config = self.load_config(config_file)
         self.thresholds = self.config.get("performance_thresholds", {})
 
-    def load_config(self, config_file: str) -> Dict[str, Any]:
+    def load_config(self, config_file: str) -> dict[str, Any]:
         """加载配置文件"""
         try:
             with open(config_file, encoding="utf-8") as f:
@@ -25,7 +25,7 @@ class BenchmarkReportGenerator:
             print(f"配置文件 {config_file} 未找到，使用默认配置")
             return self.get_default_config()
 
-    def get_default_config(self) -> Dict[str, Any]:
+    def get_default_config(self) -> dict[str, Any]:
         """获取默认配置"""
         return {
             "performance_thresholds": {
@@ -71,7 +71,7 @@ class BenchmarkReportGenerator:
                 return "需要改进", "🔴"
 
     def generate_markdown_report(
-        self, results: List[Dict[str, Any]], output_file: str = "benchmark_report.md"
+        self, results: list[dict[str, Any]], output_file: str = "benchmark_report.md"
     ):
         """生成Markdown格式的报告"""
 
@@ -234,7 +234,7 @@ class BenchmarkReportGenerator:
 
         print(f"📄 Markdown报告已生成: {output_file}")
 
-    def generate_recommendations(self, results: List[Dict[str, Any]]) -> str:
+    def generate_recommendations(self, results: list[dict[str, Any]]) -> str:
         """生成优化建议"""
         recommendations = []
 
@@ -274,7 +274,7 @@ class BenchmarkReportGenerator:
         return "\n".join(recommendations)
 
     def generate_csv_report(
-        self, results: List[Dict[str, Any]], output_file: str = "benchmark_results.csv"
+        self, results: list[dict[str, Any]], output_file: str = "benchmark_results.csv"
     ):
         """生成CSV格式的报告"""
         import csv

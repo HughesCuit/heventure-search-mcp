@@ -1,0 +1,495 @@
+[22:56:50] ==========================================
+[22:56:50] heventure-search-mcp 自动改进循环
+[22:56:50] 时间: 2026-04-27 22:56:50 CST
+[22:56:50] ==========================================
+[22:56:50] 
+[22:56:50] --- Step 1: 依赖检查 ---
+[OK] 所有依赖已是最新
+[22:56:50] 
+[22:56:50] --- Step 2: 代码质量检查 ---
+[22:56:53] ==========================================
+[22:56:53] heventure-search-mcp 自动改进循环
+[22:56:53] 时间: 2026-04-27 22:56:53 CST
+[22:56:53] ==========================================
+[22:56:53] 
+[22:56:53] --- Step 1: 依赖检查 ---
+[OK] 所有依赖已是最新
+[22:56:53] 
+[22:56:53] --- Step 2: 代码质量检查 ---
+[22:57:46] ==========================================
+[22:57:46] heventure-search-mcp 自动改进循环
+[22:57:46] 时间: 2026-04-27 22:57:46 CST
+[22:57:46] ==========================================
+[22:57:46] 
+[22:57:46] --- Step 1: 依赖检查 ---
+[WARN] 发现 3 个过时包
+Package          Version Latest Type
+---------------- ------- ------ -----
+python-multipart 0.0.26  0.0.27 wheel
+[22:57:47] 尝试安全升级...
+[OK] ✅ 依赖升级完成 (3 → 0 个过时包)
+[22:57:52] 
+[22:57:52] --- Step 2: 代码质量检查 ---
+[22:59:32] ==========================================
+[22:59:32] heventure-search-mcp 自动改进循环
+[22:59:32] 时间: 2026-04-27 22:59:32 CST
+[22:59:32] ==========================================
+[22:59:32] 
+[22:59:32] --- Step 1: 依赖检查 ---
+[OK] 所有依赖已是最新
+[22:59:34] 
+[22:59:34] --- Step 2: 代码质量检查 ---
+[WARN] ruff 发现问题:
+UP035 `typing.Dict` is deprecated, use `dict` instead
+  --> benchmark.py:10:1
+   |
+ 8 | import statistics
+ 9 | import time
+10 | from typing import Any, Dict
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+11 |
+12 | import psutil
+   |
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+  --> benchmark.py:42:33
+   |
+40 |         self.cpu_usage.append(cpu_percent)
+41 |
+42 |     def get_statistics(self) -> Dict[str, Any]:
+   |                                 ^^^^
+43 |         """获取统计信息"""
+44 |         if not self.response_times:
+   |
+help: Replace with `dict`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+   --> benchmark.py:321:29
+    |
+320 |     def save_results_to_file(
+321 |         self, results_data: Dict[str, Any], filename: str = "benchmark_results.json"
+    |                             ^^^^
+322 |     ):
+323 |         """保存结果到文件"""
+    |
+help: Replace with `dict`
+
+UP035 `typing.Dict` is deprecated, use `dict` instead
+ --> benchmark_report.py:9:1
+  |
+7 | import json
+8 | import os
+9 | from typing import Any, Dict, List
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+
+UP035 `typing.List` is deprecated, use `list` instead
+ --> benchmark_report.py:9:1
+  |
+7 | import json
+8 | import os
+9 | from typing import Any, Dict, List
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+  --> benchmark_report.py:19:48
+   |
+17 |         self.thresholds = self.config.get("performance_thresholds", {})
+18 |
+19 |     def load_config(self, config_file: str) -> Dict[str, Any]:
+   |                                                ^^^^
+20 |         """加载配置文件"""
+21 |         try:
+   |
+help: Replace with `dict`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+  --> benchmark_report.py:28:37
+   |
+26 |             return self.get_default_config()
+27 |
+28 |     def get_default_config(self) -> Dict[str, Any]:
+   |                                     ^^^^
+29 |         """获取默认配置"""
+30 |         return {
+   |
+help: Replace with `dict`
+
+UP006 [*] Use `list` instead of `List` for type annotation
+  --> benchmark_report.py:74:24
+   |
+73 |     def generate_markdown_report(
+74 |         self, results: List[Dict[str, Any]], output_file: str = "benchmark_report.md"
+   |                        ^^^^
+75 |     ):
+76 |         """生成Markdown格式的报告"""
+   |
+help: Replace with `list`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+  --> benchmark_report.py:74:29
+   |
+73 |     def generate_markdown_report(
+74 |         self, results: List[Dict[str, Any]], output_file: str = "benchmark_report.md"
+   |                             ^^^^
+75 |     ):
+76 |         """生成Markdown格式的报告"""
+   |
+help: Replace with `dict`
+
+UP006 [*] Use `list` instead of `List` for type annotation
+   --> benchmark_report.py:237:49
+    |
+235 |         print(f"📄 Markdown报告已生成: {output_file}")
+236 |
+237 |     def generate_recommendations(self, results: List[Dict[str, Any]]) -> str:
+    |                                                 ^^^^
+238 |         """生成优化建议"""
+239 |         recommendations = []
+    |
+help: Replace with `list`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+   --> benchmark_report.py:237:54
+    |
+235 |         print(f"📄 Markdown报告已生成: {output_file}")
+236 |
+237 |     def generate_recommendations(self, results: List[Dict[str, Any]]) -> str:
+    |                                                      ^^^^
+238 |         """生成优化建议"""
+239 |         recommendations = []
+    |
+help: Replace with `dict`
+
+UP006 [*] Use `list` instead of `List` for type annotation
+   --> benchmark_report.py:277:24
+    |
+276 |     def generate_csv_report(
+277 |         self, results: List[Dict[str, Any]], output_file: str = "benchmark_results.csv"
+    |                        ^^^^
+278 |     ):
+279 |         """生成CSV格式的报告"""
+    |
+help: Replace with `list`
+
+UP006 [*] Use `dict` instead of `Dict` for type annotation
+   --> benchmark_report.py:277:29
+    |
+276 |     def generate_csv_report(
+277 |         self, results: List[Dict[str, Any]], output_file: str = "benchmark_results.csv"
+    |                             ^^^^
+278 |     ):
+279 |         """生成CSV格式的报告"""
+    |
+help: Replace with `dict`
+
+C414 Unnecessary `list()` call within `sorted()`
+   --> benchmark_report.py:291:22
+    |
+289 |             all_fields.update(result.keys())
+290 |
+291 |         all_fields = sorted(list(all_fields))
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^
+292 |
+293 |         with open(output_file, "w", newline="", encoding="utf-8") as csvfile:
+    |
+help: Remove the inner `list()` call
+
+F401 `build` imported but unused; consider using `importlib.util.find_spec` to test for availability
+  --> publish.py:56:16
+   |
+54 |     # 检查是否安装了构建工具
+55 |     try:
+56 |         import build
+   |                ^^^^^
+57 |         import twine
+58 |     except ImportError as e:
+   |
+help: Remove unused import: `build`
+
+F401 `twine` imported but unused; consider using `importlib.util.find_spec` to test for availability
+  --> publish.py:57:16
+   |
+55 |     try:
+56 |         import build
+57 |         import twine
+   |                ^^^^^
+58 |     except ImportError as e:
+59 |         print(f"错误: 缺少必要的构建工具: {e}")
+   |
+help: Remove unused import: `twine`
+
+W293 Blank line contains whitespace
+   --> server.py:137:1
+    |
+135 |     async def _safe_get(self, url: str, max_redirects: int = 5, **kwargs) -> aiohttp.ClientResponse | None:
+136 |         """安全地发送HTTP GET请求，手动跟随重定向以避免无限循环
+137 |         
+    | ^^^^^^^^
+138 |         aiohttp 的默认重定向处理在某些站点（如 Bing）上会导致 TooManyRedirects 异常。
+139 |         此方法手动跟随重定向，限制重定向次数，并支持相对URL解析。
+    |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+   --> server.py:140:1
+    |
+138 |         aiohttp 的默认重定向处理在某些站点（如 Bing）上会导致 TooManyRedirects 异常。
+139 |         此方法手动跟随重定向，限制重定向次数，并支持相对URL解析。
+140 |         
+    | ^^^^^^^^
+141 |         修复: 增加了 mkt 参数剥离逻辑，防止 Bing 的 mkt 参数导致的重定向循环
+142 |         (bing.com ↔ cn.bing.com 通过 mkt=zh-CN 参数形成无限循环)
+    |
+help: Remove whitespace from blank line
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> server.py:144:9
+    |
+142 |         (bing.com ↔ cn.bing.com 通过 mkt=zh-CN 参数形成无限循环)
+143 |         """
+144 |         from urllib.parse import urlparse, parse_qs, urlencode
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+145 |         
+146 |         current_url = url
+    |
+help: Organize imports
+
+W293 [*] Blank line contains whitespace
+   --> server.py:145:1
+    |
+143 |         """
+144 |         from urllib.parse import urlparse, parse_qs, urlencode
+145 |         
+    | ^^^^^^^^
+146 |         current_url = url
+147 |         redirect_count = 0
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> server.py:160:1
+    |
+158 |                         if not location:
+159 |                             return response
+160 |                         
+    | ^^^^^^^^^^^^^^^^^^^^^^^^
+161 |                         # 解析相对URL
+162 |                         if location.startswith("/"):
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> server.py:165:1
+    |
+163 |                             parsed = urlparse(current_url)
+164 |                             location = f"{parsed.scheme}://{parsed.netloc}{location}"
+165 |                         
+    | ^^^^^^^^^^^^^^^^^^^^^^^^
+166 |                         # 剥离 mkt 参数以防止 Bing 重定向循环
+167 |                         parsed = urlparse(location)
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> server.py:173:1
+    |
+171 |                         new_query = urlencode(qs, doseq=True)
+172 |                         location = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{new_query}".rstrip("?")
+173 |                         
+    | ^^^^^^^^^^^^^^^^^^^^^^^^
+174 |                         # 检测重定向循环：如果同一个 URL 再次出现，说明进入了循环
+175 |                         if location == current_url or location in redirect_history[-3:]:
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> server.py:178:1
+    |
+176 |                             logger.debug(f"重定向循环检测到，URL: {location}")
+177 |                             return response
+178 |                         
+    | ^^^^^^^^^^^^^^^^^^^^^^^^
+179 |                         redirect_history.append(current_url)
+180 |                         redirect_count += 1
+    |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+   --> server.py:318:1
+    |
+316 |     async def search_bing(self, query: str, max_results: int = 10) -> list:
+317 |         """使用必应搜索
+318 |         
+    | ^^^^^^^^
+319 |         修复: 使用手动重定向处理避免 aiohttp TooManyRedirects 异常 (Bing 的重定向循环问题)
+320 |         注意: 不在 URL 中使用 mkt 参数，因为 Bing 会通过 mkt=zh-CN 在 bing.com 和 cn.bing.com
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> server.py:387:1
+    |
+385 |                 if not title_elem:
+386 |                     title_elem = item.find("a", class_=re.compile(r"title"))
+387 |                 
+    | ^^^^^^^^^^^^^^^^
+388 |                 title = ""
+389 |                 url = ""
+    |
+help: Remove whitespace from blank line
+
+W293 [*] Blank line contains whitespace
+   --> server.py:390:1
+    |
+388 |                 title = ""
+389 |                 url = ""
+390 |                 
+    | ^^^^^^^^^^^^^^^^
+391 |                 if title_elem:
+392 |                     link_elem = (
+    |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+   --> server.py:448:1
+    |
+446 |     async def search_google(self, query: str, max_results: int = 10) -> list:
+447 |         """使用 Google 搜索（通过HTML页面解析）
+448 |         
+    | ^^^^^^^^
+449 |         注意: Google 可能会返回验证码或拒绝非浏览器请求，
+450 |         特别是在非桌面环境中。此方法为尽力而为，不保证始终可用。
+    |
+help: Remove whitespace from blank line
+
+F541 [*] f-string without any placeholders
+   --> server.py:485:40
+    |
+483 |                     # 检测阻止
+484 |                     if not html or len(html) < 500:
+485 |                         logger.warning(f"Google 返回了空白或过短的页面，跳过")
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+486 |                         continue
+487 |                     if "captcha" in html.lower():
+    |
+help: Remove extraneous `f` prefix
+
+F541 [*] f-string without any placeholders
+   --> server.py:488:40
+    |
+486 |                         continue
+487 |                     if "captcha" in html.lower():
+488 |                         logger.warning(f"Google 返回了验证码页面，跳过")
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+489 |                         continue
+    |
+help: Remove extraneous `f` prefix
+
+Found 30 errors.
+[*] 20 fixable with the `--fix` option (5 hidden fixes can be enabled with the `--unsafe-fixes` option).
+C414 Unnecessary `list()` call within `sorted()`
+   --> benchmark_report.py:291:22
+    |
+289 |             all_fields.update(result.keys())
+290 |
+291 |         all_fields = sorted(list(all_fields))
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^
+292 |
+293 |         with open(output_file, "w", newline="", encoding="utf-8") as csvfile:
+    |
+help: Remove the inner `list()` call
+
+F401 `build` imported but unused; consider using `importlib.util.find_spec` to test for availability
+  --> publish.py:56:16
+   |
+54 |     # 检查是否安装了构建工具
+55 |     try:
+56 |         import build
+   |                ^^^^^
+57 |         import twine
+58 |     except ImportError as e:
+   |
+help: Remove unused import: `build`
+
+F401 `twine` imported but unused; consider using `importlib.util.find_spec` to test for availability
+  --> publish.py:57:16
+   |
+55 |     try:
+56 |         import build
+57 |         import twine
+   |                ^^^^^
+58 |     except ImportError as e:
+59 |         print(f"错误: 缺少必要的构建工具: {e}")
+   |
+help: Remove unused import: `twine`
+
+W293 Blank line contains whitespace
+   --> server.py:137:1
+    |
+135 |     async def _safe_get(self, url: str, max_redirects: int = 5, **kwargs) -> aiohttp.ClientResponse | None:
+136 |         """安全地发送HTTP GET请求，手动跟随重定向以避免无限循环
+137 |         
+    | ^^^^^^^^
+138 |         aiohttp 的默认重定向处理在某些站点（如 Bing）上会导致 TooManyRedirects 异常。
+139 |         此方法手动跟随重定向，限制重定向次数，并支持相对URL解析。
+    |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+   --> server.py:140:1
+    |
+138 |         aiohttp 的默认重定向处理在某些站点（如 Bing）上会导致 TooManyRedirects 异常。
+139 |         此方法手动跟随重定向，限制重定向次数，并支持相对URL解析。
+140 |         
+    | ^^^^^^^^
+141 |         修复: 增加了 mkt 参数剥离逻辑，防止 Bing 的 mkt 参数导致的重定向循环
+142 |         (bing.com ↔ cn.bing.com 通过 mkt=zh-CN 参数形成无限循环)
+    |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+   --> server.py:318:1
+    |
+316 |     async def search_bing(self, query: str, max_results: int = 10) -> list:
+317 |         """使用必应搜索
+318 |         
+    | ^^^^^^^^
+319 |         修复: 使用手动重定向处理避免 aiohttp TooManyRedirects 异常 (Bing 的重定向循环问题)
+320 |         注意: 不在 URL 中使用 mkt 参数，因为 Bing 会通过 mkt=zh-CN 在 bing.com 和 cn.bing.com
+    |
+help: Remove whitespace from blank line
+
+W293 Blank line contains whitespace
+   --> server.py:448:1
+    |
+446 |     async def search_google(self, query: str, max_results: int = 10) -> list:
+447 |         """使用 Google 搜索（通过HTML页面解析）
+448 |         
+    | ^^^^^^^^
+449 |         注意: Google 可能会返回验证码或拒绝非浏览器请求，
+450 |         特别是在非桌面环境中。此方法为尽力而为，不保证始终可用。
+    |
+help: Remove whitespace from blank line
+
+Found 30 errors (23 fixed, 7 remaining).
+No fixes available (5 hidden fixes can be enabled with the `--unsafe-fixes` option).
+[WARN] 自动修复后仍有问题，需人工处理
+[WARN] 代码格式不符合规范，自动格式化...
+1 file reformatted, 9 files left unchanged
+[OK] ruff format 完成
+[22:59:34] 
+[22:59:34] --- Step 3: 运行测试 ---
+[OK] 所有测试通过 ✅
+[22:59:39] 
+[22:59:39] --- Step 4: 性能基准测试 ---
+[OK] 基准测试完成 - 平均搜索时间: 2944ms
+[23:00:30] 
+[23:00:30] --- Step 5: Git 状态检查 ---
+[23:00:31] 发现代码改动，准备提交...
+[23:00:31] 
+[23:00:31] --- Step 6: 更新 CHANGELOG ---
+[OK] ✅ CHANGELOG 已更新 (5 commits since v1.2.4)
+[23:00:32] 
+[23:00:32] --- Step 7: Git 提交 ---

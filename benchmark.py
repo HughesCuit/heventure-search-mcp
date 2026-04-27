@@ -7,7 +7,7 @@ import asyncio
 import json
 import statistics
 import time
-from typing import Any, Dict
+from typing import Any
 
 import psutil
 
@@ -39,7 +39,7 @@ class BenchmarkResults:
         self.memory_usage.append(memory_mb)
         self.cpu_usage.append(cpu_percent)
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """获取统计信息"""
         if not self.response_times:
             return {"error": "没有响应时间数据"}
@@ -318,7 +318,7 @@ class MCPBenchmark:
         print(f"{'=' * 60}\n")
 
     def save_results_to_file(
-        self, results_data: Dict[str, Any], filename: str = "benchmark_results.json"
+        self, results_data: dict[str, Any], filename: str = "benchmark_results.json"
     ):
         """保存结果到文件"""
         with open(filename, "w", encoding="utf-8") as f:
