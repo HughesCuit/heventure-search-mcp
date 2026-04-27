@@ -1,18 +1,25 @@
 """
 测试用例 for heventure-search-mcp
 """
-import pytest
-import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
-import sys
+
 import os
+import sys
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 直接导入 server 模块
 import importlib.util
-spec = importlib.util.spec_from_file_location("server", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server.py"))
+
+spec = importlib.util.spec_from_file_location(
+    "server",
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server.py"
+    ),
+)
 server = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(server)
 
@@ -33,17 +40,30 @@ class TestWebSearcher:
         # 使用 mock 模拟 API 响应
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            'Answer': 'Test Answer',
-            'AnswerURL': 'https://example.com',
-            'RelatedTopics': [
-                {'Text': 'Result 1 - https://example.com/1', 'FirstURL': 'https://example.com/1'},
-                {'Text': 'Result 2 - https://example.com/2', 'FirstURL': 'https://example.com/2'},
-            ]
-        })
+        mock_response.json = AsyncMock(
+            return_value={
+                "Answer": "Test Answer",
+                "AnswerURL": "https://example.com",
+                "RelatedTopics": [
+                    {
+                        "Text": "Result 1 - https://example.com/1",
+                        "FirstURL": "https://example.com/1",
+                    },
+                    {
+                        "Text": "Result 2 - https://example.com/2",
+                        "FirstURL": "https://example.com/2",
+                    },
+                ],
+            }
+        )
 
         mock_session = AsyncMock()
-        mock_session.get = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock(return_value=None)))
+        mock_session.get = AsyncMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_response),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
         searcher.session = mock_session
 
         results = await searcher.search_duckduckgo("test query", max_results=5)
@@ -54,13 +74,15 @@ class TestWebSearcher:
         """测试 DuckDuckGo 空结果"""
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            'Answer': '',
-            'RelatedTopics': []
-        })
+        mock_response.json = AsyncMock(return_value={"Answer": "", "RelatedTopics": []})
 
         mock_session = AsyncMock()
-        mock_session.get = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock(return_value=None)))
+        mock_session.get = AsyncMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_response),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
         searcher.session = mock_session
 
         results = await searcher.search_duckduckgo("test query")
@@ -92,17 +114,27 @@ class TestWebSearcher:
         </html>
         """
 
+        # 创建正确的 mock - text() 需要是 async 函数
+        async def async_text():
+            return html_content
+
+        # 创建正确的异步上下文管理器 mock
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.text = AsyncMock(return_value=html_content)
+        mock_response.text = async_text
 
-        mock_session = AsyncMock()
-        mock_session.get = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock(return_value=None)))
+        # 创建一个支持 async with 的 mock
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
         searcher.session = mock_session
 
         results = await searcher.search_html_duckduckgo("test query", max_results=5)
         assert len(results) == 2
-        assert results[0]['type'] == 'web_result'
+        assert results[0]["type"] == "web_result"
 
     @pytest.mark.asyncio
     async def test_search_bing(self, searcher):
@@ -120,17 +152,27 @@ class TestWebSearcher:
         </html>
         """
 
+        # 创建正确的 mock - text() 需要是 async 函数
+        async def async_text():
+            return html_content
+
+        # 创建正确的异步上下文管理器 mock
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.text = AsyncMock(return_value=html_content)
+        mock_response.text = async_text
 
-        mock_session = AsyncMock()
-        mock_session.get = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock(return_value=None)))
+        # 创建一个支持 async with 的 mock
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
         searcher.session = mock_session
 
         results = await searcher.search_bing("test query", max_results=5)
         assert len(results) == 2
-        assert results[0]['type'] == 'bing_result'
+        assert results[0]["type"] == "bing_result"
 
     @pytest.mark.asyncio
     async def test_get_page_content(self, searcher):
@@ -145,12 +187,22 @@ class TestWebSearcher:
         </html>
         """
 
+        # 创建正确的 mock - text() 需要是 async 函数
+        async def async_text():
+            return html_content
+
+        # 创建正确的异步上下文管理器 mock
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.text = AsyncMock(return_value=html_content)
+        mock_response.text = async_text
 
-        mock_session = AsyncMock()
-        mock_session.get = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock(return_value=None)))
+        # 创建一个支持 async with 的 mock
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
         searcher.session = mock_session
 
         content = await searcher.get_page_content("https://example.com")
@@ -176,7 +228,9 @@ class TestWebSearcherIntegration:
     async def test_duckduckgo_live_search(self):
         """真实 DuckDuckGo API 测试（需要网络）"""
         async with WebSearcher() as searcher:
-            results = await searcher.search_duckduckgo("Python programming", max_results=3)
+            results = await searcher.search_duckduckgo(
+                "Python programming", max_results=3
+            )
             assert isinstance(results, list)
             # DuckDuckGo API 可能返回空结果，这是正常的
             print(f"Live search results: {len(results)}")

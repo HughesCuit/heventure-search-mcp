@@ -3,16 +3,17 @@
 Setup script for MCP Web Search Server
 """
 
-from setuptools import setup, find_packages
-import os
+from setuptools import find_packages, setup
 
 # Read README file
-with open("README.md", "r", encoding="utf-8") as fh:
+with open("README.md", encoding="utf-8") as fh:
     long_description = fh.read()
 
 # Read requirements
-with open("requirements.txt", "r", encoding="utf-8") as fh:
-    requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+with open("requirements.txt", encoding="utf-8") as fh:
+    requirements = [
+        line.strip() for line in fh if line.strip() and not line.startswith("#")
+    ]
 
 setup(
     name="heventure-search-mcp",
