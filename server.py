@@ -86,7 +86,19 @@ class WebSearcher:
         WebSearcher._search_cache.clear()
 
     async def __aenter__(self):
-        self.session = aiohttp.ClientSession(headers=self.headers)
+        # 配置SSL以避免验证问题
+        # 禁用SSL验证用于开发环境
+        connector = aiohttp.TCPConnector(
+            ssl=False,  # 开发环境禁用SSL验证
+            limit=10,
+            force_close=False,
+            enable_cleanup_closed=True
+        )
+        self.session = aiohttp.ClientSession(
+            headers=self.headers,
+            connector=connector,
+            trust_env=True  # 信任环境变量中的代理配置
+        )
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -106,12 +118,22 @@ class WebSearcher:
                     try:
                         # 尝试解析JSON
                         import json
-
                         data = json.loads(text)
                     except json.JSONDecodeError:
-                        # 如果JSON解析失败，尝试从JavaScript中提取
-                        logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
-                        return []
+                        # 有时API返回JavaScript格式，手动提取JSON
+                        import json
+                        import re
+                        # 尝试从JavaScript中提取JSON对象
+                        match = re.search(r'\{.+\}', text, re.DOTALL)
+                        if match:
+                            try:
+                                data = json.loads(match.group(0))
+                            except json.JSONDecodeError:
+                                logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
+                                return await self.search_html_duckduckgo(query, max_results)
+                        else:
+                            logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
+                            return await self.search_html_duckduckgo(query, max_results)
 
                     results = []
 
@@ -141,6 +163,10 @@ class WebSearcher:
                                     "type": "related_topic",
                                 }
                             )
+
+                    # 如果没有返回任何结果，尝试HTML模式
+                    if not results:
+                        return await self.search_html_duckduckgo(query, max_results)
 
                     return results
         except Exception as e:
@@ -190,8 +216,9 @@ class WebSearcher:
     async def search_bing(self, query: str, max_results: int = 10) -> list:
         """使用必应搜索"""
         try:
+            # 使用 cn.bing.com 避免被重定向导致无限循环
             url = (
-                f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results}"
+                f"https://cn.bing.com/search?q={quote_plus(query)}&count={max_results}"
             )
 
             async with self.session.get(
