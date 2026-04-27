@@ -103,7 +103,7 @@ class WebSearcher:
     async def __aenter__(self):
         # 配置SSL以避免验证问题
         # 禁用SSL验证用于开发环境
-        
+
         # SOCKS 代理支持
         if SOCKS_PROXY and aiohttp_socks:
             connector = aiohttp_socks.ProxyConnector.from_url(SOCKS_PROXY, ssl=False)
@@ -115,7 +115,7 @@ class WebSearcher:
                 force_close=False,
                 enable_cleanup_closed=True
             )
-        
+
         self.session = aiohttp.ClientSession(
             headers=self.headers,
             connector=connector,
@@ -207,6 +207,9 @@ class WebSearcher:
                         return await self.search_html_duckduckgo(query, max_results)
 
                     return results
+                else:
+                    logger.warning(f"DuckDuckGo API 返回非预期状态码: {response.status}")
+                    return await self.search_html_duckduckgo(query, max_results)
         except Exception as e:
             logger.error(f"DuckDuckGo搜索错误: {e}")
             return []
@@ -247,9 +250,14 @@ class WebSearcher:
                             )
 
                     return results
+                else:
+                    logger.warning(f"DuckDuckGo HTML 返回非预期状态码: {response.status}")
+                    return []
         except Exception as e:
             logger.error(f"DuckDuckGo HTML搜索错误: {e}")
             return []
+
+
 
     async def search_bing(self, query: str, max_results: int = 10) -> list:
         """使用必应搜索"""
@@ -392,7 +400,7 @@ class WebSearcher:
             return []
 
     # ==================== API Key 可选引擎 ====================
-    
+
     async def search_serpapi(self, query: str, max_results: int = 10) -> list:
         """使用 SerpAPI 搜索（需要 API Key）
         文档: https://serpapi.com/search-api
@@ -402,9 +410,9 @@ class WebSearcher:
             if not SERPAPI_KEY:
                 logger.warning("SerpAPI Key 未配置")
                 return []
-            
+
             import aiohttp
-            
+
             url = "https://serpapi.com/search"
             params = {
                 "q": query,
@@ -412,14 +420,14 @@ class WebSearcher:
                 "num": max_results,
                 "engine": "google",
             }
-            
+
             async with self.session.get(
                 url, params=params, timeout=aiohttp.ClientTimeout(total=30)
             ) as response:
                 if response.status == 200:
                     data = await response.json()
                     results = []
-                    
+
                     # 解析 SerpAPI 结果
                     organic_results = data.get("organic_results", [])
                     for item in organic_results[:max_results]:
@@ -429,7 +437,7 @@ class WebSearcher:
                             "snippet": item.get("snippet", ""),
                             "type": "serpapi_result",
                         })
-                    
+
                     logger.info(f"SerpAPI 返回 {len(results)} 条结果")
                     return results
                 elif response.status == 403:
@@ -451,9 +459,9 @@ class WebSearcher:
             if not TAVILY_API_KEY:
                 logger.warning("Tavily API Key 未配置")
                 return []
-            
+
             import aiohttp
-            
+
             url = "https://api.tavily.com/search"
             payload = {
                 "query": query,
@@ -463,14 +471,14 @@ class WebSearcher:
                 "include_raw_content": False,
                 "include_images": False,
             }
-            
+
             async with self.session.post(
                 url, json=payload, timeout=aiohttp.ClientTimeout(total=30)
             ) as response:
                 if response.status == 200:
                     data = await response.json()
                     results = []
-                    
+
                     # 解析 Tavily 结果
                     results_list = data.get("results", [])
                     for item in results_list:
@@ -480,7 +488,7 @@ class WebSearcher:
                             "snippet": item.get("content", ""),
                             "type": "tavily_result",
                         })
-                    
+
                     logger.info(f"Tavily 返回 {len(results)} 条结果")
                     return results
                 elif response.status == 401:
@@ -596,7 +604,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 elif engine == "tavily":
                     return await searcher.search_tavily(query, max_results)
                 return []
-            
+
             # 根据选择的搜索引擎构建任务列表
             # 优先级：免费引擎 -> API Key 增强引擎
             engines = {
@@ -604,11 +612,11 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 "bing": ["bing"],
                 "both": ["duckduckgo", "bing"],
             }.get(search_engine, ["duckduckgo"])
-            
+
             # 如果有 SerpAPI Key，添加 SerpAPI 搜索（优先级最高）
             if SERPAPI_KEY:
                 engines.append("serpapi")
-            
+
             # 如果有 Tavily API Key，添加 Tavily 搜索
             if TAVILY_API_KEY:
                 engines.append("tavily")
@@ -644,14 +652,14 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 "bing": "必应",
                 "both": "DuckDuckGo + 必应",
             }
-            
+
             # 添加活跃的 API 引擎
             active_engines = []
             if SERPAPI_KEY:
                 active_engines.append("SerpAPI")
             if TAVILY_API_KEY:
                 active_engines.append("Tavily")
-            
+
             engine_desc = search_engines_used.get(search_engine, "DuckDuckGo")
             if active_engines:
                 engine_desc += " + " + " + ".join(active_engines)

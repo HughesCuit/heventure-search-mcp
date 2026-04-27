@@ -62,7 +62,7 @@ dev-dependencies = [
 
 [tool.ruff]
 line-length = 88
-target-version = "1.2.4"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = [

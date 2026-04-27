@@ -2,14 +2,25 @@
 
 ## [Unreleased]
 
+### 计划中
+- Google 搜索引擎支持
+- 搜索结果去重与排序优化
+- Tavily API 的全面测试覆盖
 
+## [1.3.0] - 2026-04-27
 
+### 新增
+- 🆕 **Tavily API 支持**: 新增 Tavily 搜索引擎（需 API Key，每月 1000 次免费）
+- 🔧 **SerpAPI 增强**: 恢复 SerpAPI 搜索支持并优化错误处理
+- ⚡ **多引擎并发**: 使用 asyncio.gather 同时执行多引擎搜索
+- 🔄 **非 API 引擎重构**: 移除 Google，保留 DuckDuckGo + Bing 免 API 方案
 
-
-
-
-
-
+### 改进
+- 📝 更新工具描述，反映 SerpAPI/Tavily 可选 API 引擎
+- 🔧 修复 pyproject.toml 中 ruff target-version 配置错误（"1.2.4" → "py310"）
+- 🧹 自动修复 18 处代码风格问题（W293 空白行尾空格）
+- 📋 更新 CHANGELOG 记录 v1.3.0 完整变更
+- 🐍 提升最低 Python 版本要求到 3.10
 ## [1.2.4] - 2026-04-27
 
 ### Changed
