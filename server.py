@@ -652,3 +652,9 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+# Entry point for pip/uvx (must be sync function)
+def entry_point():
+    """Sync entry point for package console_scripts"""
+    asyncio.run(main())
