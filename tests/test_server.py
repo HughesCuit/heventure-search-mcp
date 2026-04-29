@@ -245,5 +245,354 @@ class TestWebSearcherIntegration:
             print(f"Bing results: {len(results)}")
 
 
+class TestSearchGoogle:
+    """Google 搜索测试"""
+
+    @pytest.fixture
+    def searcher(self):
+        return WebSearcher()
+
+    @pytest.mark.asyncio
+    async def test_search_google(self, searcher):
+        """测试 Google 搜索返回正确结果"""
+        google_html = """
+        <html>
+            <body>
+                <div id="search">
+                    <a href="https://example.com/1"><h3>Result Title 1</h3></a>
+                    <a href="https://example.com/2"><h3>Result Title 2</h3></a>
+                    <a href="https://example.com/3"><h3>Result Title 3</h3></a>
+                </div>
+            </body>
+        </html>
+        """ + "<!-- " + "x" * 600 + " -->"
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value=google_html)
+        searcher._safe_get = AsyncMock(return_value=mock_response)
+
+        results = await searcher.search_google("test query", max_results=10)
+        assert len(results) == 3
+        for r in results:
+            assert r["type"] == "google_result"
+            assert "title" in r
+            assert "url" in r
+            assert "snippet" in r
+            assert r["url"].startswith("http")
+        assert results[0]["title"] == "Result Title 1"
+        assert results[0]["url"] == "https://example.com/1"
+
+    @pytest.mark.asyncio
+    async def test_search_google_empty(self, searcher):
+        """测试 Google 搜索返回空结果（无 h3 标签）"""
+        empty_html = "<html><body><div id='search'><p>No results here</p></div></body></html>" + "<!-- " + "x" * 600 + " -->"
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value=empty_html)
+        searcher._safe_get = AsyncMock(return_value=mock_response)
+
+        results = await searcher.search_google("test query")
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_google_captcha(self, searcher):
+        """测试 Google 返回验证码页面时返回空结果"""
+        captcha_html = "<html><body>Please solve the captcha to continue</body></html>" + "<!-- " + "x" * 600 + " -->"
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value=captcha_html)
+        searcher._safe_get = AsyncMock(return_value=mock_response)
+
+        results = await searcher.search_google("test query")
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_google_error(self, searcher):
+        """测试 Google 搜索异常处理"""
+        searcher._safe_get = AsyncMock(side_effect=Exception("Network error"))
+
+        results = await searcher.search_google("test query")
+        assert results == []
+
+
+class TestSafeGet:
+    """_safe_get 重定向处理测试"""
+
+    @pytest.fixture
+    def searcher(self):
+        return WebSearcher()
+
+    @pytest.mark.asyncio
+    async def test_safe_get_normal_response(self, searcher):
+        """测试正常 200 响应直接返回"""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com")
+        assert result == mock_response
+        mock_session.get.assert_called_once_with(
+            "https://example.com", allow_redirects=False
+        )
+
+    @pytest.mark.asyncio
+    async def test_safe_get_redirect_follow(self, searcher):
+        """测试 302 重定向被正确跟随"""
+        redirect_response = AsyncMock()
+        redirect_response.status = 302
+        redirect_response.headers = {"Location": "https://example.com/final"}
+
+        final_response = AsyncMock()
+        final_response.status = 200
+
+        call_count = 0
+        def side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            cm = MagicMock()
+            if call_count == 1:
+                cm.__aenter__ = AsyncMock(return_value=redirect_response)
+            else:
+                cm.__aenter__ = AsyncMock(return_value=final_response)
+            cm.__aexit__ = AsyncMock(return_value=None)
+            return cm
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=side_effect)
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com/start")
+        assert result == final_response
+        assert mock_session.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_safe_get_redirect_loop(self, searcher):
+        """测试重定向循环检测"""
+        resp_b = AsyncMock()
+        resp_b.status = 302
+        resp_b.headers = {"Location": "https://example.com/B"}
+
+        call_count = 0
+        def side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            cm = MagicMock()
+            cm.__aenter__ = AsyncMock(return_value=resp_b)
+            cm.__aexit__ = AsyncMock(return_value=None)
+            return cm
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=side_effect)
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com/A")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_safe_get_max_redirects(self, searcher):
+        """测试超过最大重定向次数返回 None"""
+        resp = AsyncMock()
+        resp.status = 302
+        resp.headers = {"Location": "https://example.com/next"}
+
+        call_count = 0
+        def side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            cm = MagicMock()
+            cm.__aenter__ = AsyncMock(return_value=resp)
+            cm.__aexit__ = AsyncMock(return_value=None)
+            return cm
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=side_effect)
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com/start", max_redirects=3)
+        assert result is None
+        assert mock_session.get.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_safe_get_mkt_redirect_stripping(self, searcher):
+        """测试重定向时 mkt 参数被正确剥离"""
+        redirect_response = AsyncMock()
+        redirect_response.status = 302
+        redirect_response.headers = {"Location": "https://example.com/search?q=test&mkt=zh-CN"}
+
+        final_response = AsyncMock()
+        final_response.status = 200
+
+        call_count = 0
+        def side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            cm = MagicMock()
+            if call_count == 1:
+                cm.__aenter__ = AsyncMock(return_value=redirect_response)
+            else:
+                cm.__aenter__ = AsyncMock(return_value=final_response)
+            cm.__aexit__ = AsyncMock(return_value=None)
+            return cm
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=side_effect)
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com/start")
+        assert result == final_response
+        # 验证第二次请求的 URL 中 mkt 参数被剥离
+        second_call_url = mock_session.get.call_args_list[1][0][0]
+        assert "mkt" not in second_call_url
+        assert "q=test" in second_call_url
+
+
+class TestCache:
+    """缓存操作测试"""
+
+    def setup_method(self):
+        """每个测试前清空缓存"""
+        WebSearcher.clear_cache()
+
+    def test_cache_set_and_get(self):
+        """测试缓存写入和读取"""
+        key = "test_key"
+        results = [{"title": "Test", "url": "https://example.com"}]
+        WebSearcher._set_to_cache(key, results)
+        assert WebSearcher._get_from_cache(key) == results
+
+    def test_cache_miss(self):
+        """测试缓存未命中返回 None"""
+        assert WebSearcher._get_from_cache("nonexistent_key") is None
+
+    def test_cache_clear(self):
+        """测试清空缓存"""
+        WebSearcher._set_to_cache("key1", [{"title": "A"}])
+        WebSearcher._set_to_cache("key2", [{"title": "B"}])
+        assert WebSearcher._get_from_cache("key1") is not None
+        WebSearcher.clear_cache()
+        assert WebSearcher._get_from_cache("key1") is None
+        assert WebSearcher._get_from_cache("key2") is None
+
+    def test_cache_lru_eviction(self):
+        """测试缓存超过最大大小时触发淘汰"""
+        for i in range(WebSearcher._cache_max_size):
+            WebSearcher._set_to_cache(f"key_{i}", [{"title": f"Result {i}"}])
+        assert len(WebSearcher._search_cache) == WebSearcher._cache_max_size
+
+        # 写入第 101 个条目，触发淘汰（清除前 50 个）
+        WebSearcher._set_to_cache("overflow_key", [{"title": "Overflow"}])
+        assert len(WebSearcher._search_cache) < WebSearcher._cache_max_size + 1
+        # overflow_key 应该存在
+        assert WebSearcher._get_from_cache("overflow_key") is not None
+
+
+class TestSearchSerpAPI:
+    """SerpAPI 搜索测试"""
+
+    @pytest.fixture
+    def searcher(self):
+        return WebSearcher()
+
+    @pytest.mark.asyncio
+    async def test_search_serpapi_no_key(self, searcher, monkeypatch):
+        """测试 SerpAPI Key 未配置时返回空结果"""
+        monkeypatch.setattr(server, "SERPAPI_KEY", None)
+        results = await searcher.search_serpapi("test query")
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_serpapi(self, searcher, monkeypatch):
+        """测试 SerpAPI 搜索结果解析"""
+        monkeypatch.setattr(server, "SERPAPI_KEY", "test-api-key")
+        api_response = {
+            "organic_results": [
+                {"title": "SerpAPI Result 1", "link": "https://example.com/1", "snippet": "Snippet 1"},
+                {"title": "SerpAPI Result 2", "link": "https://example.com/2", "snippet": "Snippet 2"},
+            ]
+        }
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=api_response)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_serpapi("test query", max_results=10)
+        assert len(results) == 2
+        assert results[0]["title"] == "SerpAPI Result 1"
+        assert results[0]["url"] == "https://example.com/1"
+        assert results[0]["snippet"] == "Snippet 1"
+        assert results[0]["type"] == "serpapi_result"
+        assert results[1]["type"] == "serpapi_result"
+
+
+class TestSearchTavily:
+    """Tavily 搜索测试"""
+
+    @pytest.fixture
+    def searcher(self):
+        return WebSearcher()
+
+    @pytest.mark.asyncio
+    async def test_search_tavily_no_key(self, searcher, monkeypatch):
+        """测试 Tavily API Key 未配置时返回空结果"""
+        monkeypatch.setattr(server, "TAVILY_API_KEY", None)
+        results = await searcher.search_tavily("test query")
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_tavily(self, searcher, monkeypatch):
+        """测试 Tavily 搜索结果解析"""
+        monkeypatch.setattr(server, "TAVILY_API_KEY", "test-api-key")
+        api_response = {
+            "results": [
+                {"title": "Tavily Result 1", "url": "https://example.com/1", "content": "Content 1"},
+                {"title": "Tavily Result 2", "url": "https://example.com/2", "content": "Content 2"},
+            ]
+        }
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=api_response)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_tavily("test query", max_results=10)
+        assert len(results) == 2
+        assert results[0]["title"] == "Tavily Result 1"
+        assert results[0]["url"] == "https://example.com/1"
+        assert results[0]["snippet"] == "Content 1"
+        assert results[0]["type"] == "tavily_result"
+        assert results[1]["type"] == "tavily_result"
+
+    @pytest.mark.asyncio
+    async def test_search_tavily_error(self, searcher, monkeypatch):
+        """测试 Tavily 搜索异常处理"""
+        monkeypatch.setattr(server, "TAVILY_API_KEY", "test-api-key")
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(side_effect=Exception("Network error"))
+        searcher.session = mock_session
+
+        results = await searcher.search_tavily("test query")
+        assert results == []
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
