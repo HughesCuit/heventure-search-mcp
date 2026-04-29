@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 已完成
+- ✅ **修复 server_version 与项目版本同步**: server.py 中的 server_version 现在使用 `__version__` 变量，与 pyproject.toml 保持一致 (1.4.0)
 - Google 搜索引擎支持（已完成）
 - 搜索结果去重与排序优化
 - ✅ **SSL 验证配置化**: 新增 `WEB_SEARCH_SSL_VERIFY` 环境变量，支持生产环境启用 SSL 验证（默认 `true`）

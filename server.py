@@ -26,6 +26,8 @@ from mcp.types import (
     Tool,
 )
 
+__version__ = "1.4.0"
+
 # 配置日志
 logger = logging.getLogger("web-search-server")
 
@@ -912,7 +914,7 @@ async def main():
             write_stream,
             InitializationOptions(
                 server_name="web-search-server",
-                server_version="1.0.0",
+                server_version=__version__,
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},
