@@ -109,7 +109,7 @@ class WebSearcher:
     async def __aenter__(self):
         # 配置SSL验证
         # SSL_VERIFY=True 时启用验证，SSL_VERIFY=False 时禁用验证（用于开发环境）
-        ssl_context = not SSL_VERIFY  # ssl=False 禁用验证，True/ssl.SSLContext 启用验证
+        ssl_context = SSL_VERIFY  # ssl=False 禁用验证，True/ssl.SSLContext 启用验证
 
         # SOCKS 代理支持
         if SOCKS_PROXY and aiohttp_socks:

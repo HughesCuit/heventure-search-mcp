@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- 修复 SSL_VERIFY 取反逻辑错误：`not SSL_VERIFY` 导致生产环境关闭 SSL 验证、开发环境反而开启，移除多余的 `not`
 - 修复 `pyproject.toml` 中 `target-version` 误设为项目版本号 `"1.4.2"`，改为正确的 Python 版本 `"py312"`，恢复 ruff check 功能
 - 修复 server.py 中的 ruff lint 问题：清理空白行空格（W293）、排序导入（I001）、替换 `asyncio.TimeoutError` 为 `TimeoutError`（UP041）
 
