@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 # Ensure brotli is available for aiohttp to handle br encoding
 try:
     import brotli  # noqa: F401
+    logging.getLogger("web-search-server").debug("brotli loaded successfully")
 except ImportError:
     pass
 
@@ -128,11 +129,6 @@ class WebSearcher:
             connector=connector,
             trust_env=True,  # 信任环境变量中的代理配置
         )
-        # 确保 brotli 可用用于解码
-        try:
-            import brotli  # noqa: F401
-        except ImportError:
-            pass
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
