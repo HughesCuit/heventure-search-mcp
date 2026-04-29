@@ -189,6 +189,10 @@ class WebSearcher:
                         new_query = urlencode(qs, doseq=True)
                         location = f"{parsed.scheme}://{netloc}{parsed.path}?{new_query}".rstrip("?")
                         
+                        # 通用循环检测：检查 URL 是否已在历史中
+                        if current_url in [h[0] for h in redirect_history]:
+                            logger.warning(f"检测到重定向循环，URL: {current_url}")
+                            return None
                         redirect_history.append((current_url, response.status))
                         redirect_count += 1
                         current_url = location
