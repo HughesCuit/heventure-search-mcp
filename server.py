@@ -143,15 +143,15 @@ class WebSearcher:
         self, url: str, max_redirects: int = 5, **kwargs
     ) -> aiohttp.ClientResponse | None:
         """安全地发送HTTP GET请求，手动跟随重定向以避免无限循环
-        
+
         aiohttp 的默认重定向处理在某些站点（如 Bing）上会导致 TooManyRedirects 异常。
         此方法手动跟随重定向，限制重定向次数，并支持相对URL解析。
-        
+
         修复: 增加了 mkt 参数剥离逻辑，防止 Bing 的 mkt 参数导致的重定向循环
         (bing.com ↔ cn.bing.com 通过 mkt=zh-CN 参数形成无限循环)
         """
-        from urllib.parse import urlparse, parse_qs, urlencode
-        
+        from urllib.parse import parse_qs, urlencode, urlparse
+
         current_url = url
         redirect_count = 0
         redirect_history = []  # 记录访问过的 URL 用于检测循环
@@ -166,18 +166,18 @@ class WebSearcher:
                         location = response.headers.get("Location", "")
                         if not location:
                             return response
-                        
+
                         # 解析相对URL
                         if location.startswith("/"):
                             parsed = urlparse(current_url)
                             location = f"{parsed.scheme}://{parsed.netloc}{location}"
-                        
+
                         # 剥离 mkt 参数以防止 Bing 重定向循环
                         parsed = urlparse(location)
                         qs = parse_qs(parsed.query)
                         if "mkt" in qs:
                             del qs["mkt"]
-                        
+
                         # 规范化 Bing 域名：将 bing.com 和 cn.bing.com 统一为 www.bing.com
                         # 这样可以打破两者之间的重定向循环
                         netloc = parsed.netloc
@@ -185,10 +185,10 @@ class WebSearcher:
                             netloc = "www.bing.com"
                         elif netloc.startswith("www.") and "bing" in netloc:
                             netloc = "www.bing.com"
-                        
+
                         new_query = urlencode(qs, doseq=True)
                         location = f"{parsed.scheme}://{netloc}{parsed.path}?{new_query}".rstrip("?")
-                        
+
                         # 通用循环检测：检查 URL 是否已在历史中
                         if current_url in [h[0] for h in redirect_history]:
                             logger.warning(f"检测到重定向循环，URL: {current_url}")
@@ -603,7 +603,7 @@ class WebSearcher:
                     else:
                         logger.info("Google 搜索返回 0 条结果")
 
-                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                except (TimeoutError, aiohttp.ClientError) as e:
                     logger.warning(f"Google 搜索 URL ({url}) 失败: {e}")
                     continue
 
