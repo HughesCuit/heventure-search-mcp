@@ -1,0 +1,233 @@
+{
+  "project": "heventure-search-mcp",
+  "last_review": "2026-04-29T17:01:21+08:00",
+  "last_improve": "2026-04-29T21:20:00+08:00",
+  "overview": "第3次代码审查完成。新增3个issues和3个tasks，累计10个issues和10个tasks。已完成4个tasks（task-1 SSL验证配置化, task-2 server_version同步, task-3 README_CN.md更新, task-6 _safe_get循环重定向检测）。已解决6个issues，剩余4个open issues和6个pending tasks。",
+  "issues": [
+    {
+      "id": "issue-1",
+      "title": "SSL验证在生产环境被禁用",
+      "description": "server.py 中 aiohttp ClientSession 配置了 ssl=False（开发环境禁用SSL验证），这在生产环境中存在安全风险。应该根据环境变量或配置决定是否启用SSL验证。",
+      "priority": "high",
+      "created_at": "2026-04-28T09:00:00+08:00",
+      "status": "resolved"
+    },
+    {
+      "id": "issue-2",
+      "title": "server_version 硬编码为 1.0.0，与项目版本不同步",
+      "description": "main() 函数中 InitializationOptions 的 server_version 固定为 '1.0.0'，但 pyproject.toml 中版本已是 1.4.0。版本不一致可能导致客户端误解服务器功能。",
+      "priority": "medium",
+      "created_at": "2026-04-28T09:00:00+08:00",
+      "status": "resolved"
+    },
+    {
+      "id": "issue-3",
+      "title": "README_CN.md 文档与代码不同步",
+      "description": "README_CN.md 中 search_engine 参数只列出 'duckduckgo'、'bing'、'both' 三个选项，但代码已支持 'google' 选项。文档缺失 Google 搜索引擎说明。",
+      "priority": "medium",
+      "created_at": "2026-04-28T09:00:00+08:00",
+      "status": "resolved"
+    },
+    {
+      "id": "issue-4",
+      "title": "测试覆盖率不足",
+      "description": "缺少对 search_google、search_serpapi、search_tavily、_safe_get 方法的单元测试，也缺少缓存操作的测试用例。",
+      "priority": "medium",
+      "created_at": "2026-04-28T09:00:00+08:00",
+      "status": "open"
+    },
+    {
+      "id": "issue-5",
+      "title": "tavily 和 aiohttp-socks 应为可选依赖",
+      "description": "pyproject.toml 中将 tavily 和 aiohttp-socks 放在 dependencies 中，但它们仅在特定条件下使用（需要 API Key 或 SOCKS Proxy）。这些应该是optional-dependencies。",
+      "priority": "low",
+      "created_at": "2026-04-28T09:00:00+08:00",
+      "status": "open"
+    },
+    {
+      "id": "issue-6",
+      "title": "_safe_get 循环重定向检测不完整",
+      "description": "_safe_get 方法使用 redirect_history 记录重定向历史用于检测循环，但 redirect_history 从未真正用于循环检测。当 bing.com → cn.bing.com → bing.com 形成循环时，代码只通过硬编码的 netloc 规范化来打破循环，这种方式不够通用。",
+      "priority": "medium",
+      "created_at": "2026-04-28T17:01:35+08:00",
+      "status": "resolved"
+    },
+    {
+      "id": "issue-7",
+      "title": "缓存键未考虑查询参数顺序",
+      "description": "_get_cache_key 方法生成缓存键时直接使用 f'{engine}:{query}:{max_results}'，但 URL 参数可能顺序不同导致相同语义查询的缓存失效。",
+      "priority": "low",
+      "created_at": "2026-04-28T17:01:35+08:00",
+      "status": "open"
+    },
+    {
+      "id": "issue-8",
+      "title": "ruff 检查发现代码风格问题",
+      "description": "ruff check 发现 server.py 中有 W293（空行含空白字符）和 I001（import 块顺序问题）错误，影响代码整洁度和 CI lint 检查。",
+      "priority": "low",
+      "created_at": "2026-04-29T17:01:21+08:00",
+      "status": "open"
+    },
+    {
+      "id": "issue-9",
+      "title": "brotli 导入逻辑冗余",
+      "description": "server.py 在两处地方重复尝试导入 brotli（第16-20行和第125-129行），且导入失败时只是 pass，没有日志警告。代码应统一在模块顶部一次性完成可选依赖检查。",
+      "priority": "low",
+      "created_at": "2026-04-29T17:01:21+08:00",
+      "status": "open"
+    },
+    {
+      "id": "issue-10",
+      "title": "pyproject.toml 未注册 integration mark",
+      "description": "pytest 运行出现 'PytestUnknownMarkWarning: Unknown pytest.mark.integration' 警告，应在 pyproject.toml 中通过 [tool.pytest.ini_options] markers 注册该 mark，避免测试警告。",
+      "priority": "low",
+      "created_at": "2026-04-29T17:01:21+08:00",
+      "status": "open"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-1",
+      "title": "实现 SSL 验证配置化",
+      "description": "在 server.py 中添加环境变量控制 SSL 验证：\n1. 添加环境变量 WEB_SEARCH_SSL_VERIFY (default: true)\n2. 修改 TCPConnector 的 ssl 参数为环境变量值\n3. 添加 --no-ssl-verify 命令行参数选项",
+      "issue_id": "issue-1",
+      "priority": "high",
+      "created_at": "2026-04-28T09:00:00+08:00",
+      "completed_at": "2026-04-29T21:13:00+08:00",
+      "status": "completed"
+    },
+    {
+      "id": "task-2",
+      "title": "修复 server_version 与项目版本同步",
+      "description": "将 server.py 中的 server_version 从硬编码 '1.0.0' 改为动态读取：\n1. 从 pyproject.toml 读取 __version__\n2. 或在 server.py 顶部定义 __version__ = '1.4.0'\n3. 确保 main() 中的 InitializationOptions 使用该变量",
+      "issue_id": "issue-2",
+      "priority": "medium",
+      "created_at": "2026-04-28T09:00:00+08:00",
+      "completed_at": "2026-04-29T21:14:00+08:00",
+      "status": "completed"
+    },
+    {
+      "id": "task-3",
+      "title": "更新 README_CN.md 文档",
+      "description": "更新 README_CN.md 以反映当前代码功能：\n1. 在 search_engine 选项中添加 'google' 选项说明\n2. 更新搜索引擎列表描述（现在支持 DuckDuckGo + Google + 必应）\n3. 确保与 README.md 保持一致",
+      "issue_id": "issue-3",
+      "priority": "medium",
+      "created_at": "2026-04-28T09:00:00+08:00",
+      "completed_at": "2026-04-29T21:19:00+08:00",
+      "status": "completed"
+    },
+    {
+      "id": "task-4",
+      "title": "补充单元测试覆盖率",
+      "description": "在 tests/test_server.py 中添加缺失的测试：\n1. test_search_google: mock Google HTML 响应，验证结果解析\n2. test_safe_get: 测试重定向处理和循环检测\n3. test_cache_operations: 测试缓存设置、获取、清除、LRU淘汰\n4. test_search_serpapi 和 test_search_tavily: mock API 响应",
+      "issue_id": "issue-4",
+      "priority": "medium",
+      "created_at": "2026-04-28T09:00:00+08:00",
+      "status": "pending"
+    },
+    {
+      "id": "task-5",
+      "title": "拆分必选和可选依赖",
+      "description": "修改 pyproject.toml：\n1. 将 aiohttp-socks 移入 optional-dependencies [socks]\n2. 将 tavily 移入 optional-dependencies [tavily]\n3. 添加核心依赖项：mcp, aiohttp, beautifulsoup4, lxml, pydantic\n4. 确保 README 说明哪些功能需要额外依赖",
+      "issue_id": "issue-5",
+      "priority": "low",
+      "created_at": "2026-04-28T09:00:00+08:00",
+      "status": "pending"
+    },
+    {
+      "id": "task-6",
+      "title": "完善 _safe_get 循环重定向检测",
+      "description": "在 _safe_get 中真正使用 redirect_history 进行循环检测：\n1. 在设置 current_url 前，检查该 URL 是否已在 redirect_history 中\n2. 如是，返回 None 表示检测到循环\n3. 保留现有的 netloc 规范化作为兜底，但添加通用的循环检测逻辑\n4. 添加单元测试验证循环检测",
+      "issue_id": "issue-6",
+      "priority": "medium",
+      "created_at": "2026-04-28T17:01:35+08:00",
+      "completed_at": "2026-04-29T21:20:00+08:00",
+      "status": "completed"
+    },
+    {
+      "id": "task-7",
+      "title": "统一缓存键的查询规范化",
+      "description": "修改 _get_cache_key 方法，对 query 进行预处理以确保语义相同的查询产生相同的缓存键：\n1. 将 query 转为小写\n2. 合并多个空格为单个空格\n3. 去除首尾空格\n4. 例如：'  Python  tutorial  ' 和 'python tutorial' 应产生相同的缓存键",
+      "issue_id": "issue-7",
+      "priority": "low",
+      "created_at": "2026-04-28T17:01:35+08:00",
+      "status": "pending"
+    },
+    {
+      "id": "task-8",
+      "title": "运行 ruff check --fix 修复代码风格",
+      "description": "在项目根目录执行 ruff check server.py --fix，自动修复 W293（空行空白）和 I001（import 顺序）问题。修复后确认 ruff check 无错误输出。",
+      "issue_id": "issue-8",
+      "priority": "low",
+      "created_at": "2026-04-29T17:01:21+08:00",
+      "status": "pending"
+    },
+    {
+      "id": "task-9",
+      "title": "统一 brotli 导入逻辑",
+      "description": "将 server.py 中分散的两处 brotli 导入（第16-20行和第125-129行）统一为模块顶部的单次检查：\n1. 删除第125-129行的重复导入\n2. 在模块顶部添加统一的可选依赖检查，带 logger.debug 确认是否加载成功\n3. 保留 try/except 避免 brotli 未安装时服务崩溃",
+      "issue_id": "issue-9",
+      "priority": "low",
+      "created_at": "2026-04-29T17:01:21+08:00",
+      "status": "pending"
+    },
+    {
+      "id": "task-10",
+      "title": "在 pyproject.toml 注册 pytest markers",
+      "description": "在 pyproject.toml 中添加 pytest 配置，注册 integration mark 以消除警告：\n[tool.pytest.ini_options]\nmarkers = [\n    \"integration: 集成测试，需要真实网络访问\",\n]",
+      "issue_id": "issue-10",
+      "priority": "low",
+      "created_at": "2026-04-29T17:01:21+08:00",
+      "status": "pending"
+    }
+  ],
+  "completed": [
+    {
+      "id": "task-1",
+      "title": "实现 SSL 验证配置化",
+      "completed_at": "2026-04-29T21:13:00+08:00"
+    },
+    {
+      "id": "task-2",
+      "title": "修复 server_version 与项目版本同步",
+      "completed_at": "2026-04-29T21:14:00+08:00"
+    },
+    {
+      "id": "task-3",
+      "title": "更新 README_CN.md 文档",
+      "completed_at": "2026-04-29T21:19:00+08:00"
+    },
+    {
+      "id": "task-6",
+      "title": "完善 _safe_get 循环重定向检测",
+      "completed_at": "2026-04-29T21:20:00+08:00"
+    }
+  ],
+  "session_log": [
+    {
+      "date": "2026-04-28T09:00:00+08:00",
+      "action": "代码审查",
+      "summary": "首次全面审查，发现5个issues和5个tasks"
+    },
+    {
+      "date": "2026-04-28T17:01:35+08:00",
+      "action": "代码审查",
+      "summary": "第2次审查，新增2个issues（循环重定向检测、缓存键规范化）和2个tasks"
+    },
+    {
+      "date": "2026-04-29T17:01:21+08:00",
+      "action": "代码审查",
+      "summary": "第3次审查，新增3个issues（ruff风格问题、brotli冗余导入、pytest mark警告）和3个tasks"
+    },
+    {
+      "date": "2026-04-29T21:15:00+08:00",
+      "action": "自动改进",
+      "summary": "执行 task-1（SSL验证配置化）和 task-2（server_version同步），2/2成功，已推送至 GitHub"
+    },
+    {
+      "date": "2026-04-29T21:20:00+08:00",
+      "action": "自动改进",
+      "summary": "执行 task-3（README_CN.md更新）和 task-6（_safe_get循环重定向检测），2/2成功，已推送至 GitHub"
+    }
+  ]
+}
