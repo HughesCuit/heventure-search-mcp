@@ -33,6 +33,9 @@ logger = logging.getLogger("web-search-server")
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")  # SerpAPI API Key (https://serpapi.com)
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")  # Tavily API Key (https://tavily.com)
 
+# SSL 验证配置 (true=启用验证, false=禁用验证，用于开发环境)
+SSL_VERIFY = os.environ.get("WEB_SEARCH_SSL_VERIFY", "true").lower() == "true"
+
 # SOCKS 代理支持
 SOCKS_PROXY = os.environ.get("SOCKS_PROXY") or os.environ.get("socks_proxy")
 aiohttp_socks = None
@@ -102,16 +105,17 @@ class WebSearcher:
         WebSearcher._search_cache.clear()
 
     async def __aenter__(self):
-        # 配置SSL以避免验证问题
-        # 禁用SSL验证用于开发环境
+        # 配置SSL验证
+        # SSL_VERIFY=True 时启用验证，SSL_VERIFY=False 时禁用验证（用于开发环境）
+        ssl_context = not SSL_VERIFY  # ssl=False 禁用验证，True/ssl.SSLContext 启用验证
 
         # SOCKS 代理支持
         if SOCKS_PROXY and aiohttp_socks:
-            connector = aiohttp_socks.ProxyConnector.from_url(SOCKS_PROXY, ssl=False)
+            connector = aiohttp_socks.ProxyConnector.from_url(SOCKS_PROXY, ssl=ssl_context)
             logger.info(f"SOCKS connector created: {SOCKS_PROXY}")
         else:
             connector = aiohttp.TCPConnector(
-                ssl=False,  # 开发环境禁用SSL验证
+                ssl=ssl_context,  # 根据 WEB_SEARCH_SSL_VERIFY 环境变量配置
                 limit=10,
                 force_close=False,
                 enable_cleanup_closed=True,
@@ -137,20 +141,20 @@ class WebSearcher:
         self, url: str, max_redirects: int = 5, **kwargs
     ) -> aiohttp.ClientResponse | None:
         """安全地发送HTTP GET请求，手动跟随重定向以避免无限循环
-
+        
         aiohttp 的默认重定向处理在某些站点（如 Bing）上会导致 TooManyRedirects 异常。
         此方法手动跟随重定向，限制重定向次数，并支持相对URL解析。
-
+        
         修复: 增加了 mkt 参数剥离逻辑，防止 Bing 的 mkt 参数导致的重定向循环
         (bing.com ↔ cn.bing.com 通过 mkt=zh-CN 参数形成无限循环)
         """
-        from urllib.parse import parse_qs, urlencode, urlparse
-
+        from urllib.parse import urlparse, parse_qs, urlencode
+        
         current_url = url
         redirect_count = 0
-        redirect_history = []
+        redirect_history = []  # 记录访问过的 URL 用于检测循环
 
-        while redirect_count <= max_redirects:
+        while redirect_count < max_redirects:
             try:
                 async with self.session.get(
                     current_url, allow_redirects=False, **kwargs
@@ -160,38 +164,41 @@ class WebSearcher:
                         location = response.headers.get("Location", "")
                         if not location:
                             return response
-
+                        
                         # 解析相对URL
                         if location.startswith("/"):
                             parsed = urlparse(current_url)
                             location = f"{parsed.scheme}://{parsed.netloc}{location}"
-
+                        
                         # 剥离 mkt 参数以防止 Bing 重定向循环
                         parsed = urlparse(location)
                         qs = parse_qs(parsed.query)
                         if "mkt" in qs:
                             del qs["mkt"]
+                        
+                        # 规范化 Bing 域名：将 bing.com 和 cn.bing.com 统一为 www.bing.com
+                        # 这样可以打破两者之间的重定向循环
+                        netloc = parsed.netloc
+                        if netloc in ("bing.com", "cn.bing.com"):
+                            netloc = "www.bing.com"
+                        elif netloc.startswith("www.") and "bing" in netloc:
+                            netloc = "www.bing.com"
+                        
                         new_query = urlencode(qs, doseq=True)
-                        location = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{new_query}".rstrip(
-                            "?"
-                        )
-
-                        # 检测重定向循环：如果同一个 URL 再次出现，说明进入了循环
-                        if location == current_url or location in redirect_history[-3:]:
-                            logger.debug(f"重定向循环检测到，URL: {location}")
-                            return response
-
-                        redirect_history.append(current_url)
+                        location = f"{parsed.scheme}://{netloc}{parsed.path}?{new_query}".rstrip("?")
+                        
+                        redirect_history.append((current_url, response.status))
                         redirect_count += 1
                         current_url = location
                         logger.debug(f"Redirect {redirect_count}: {current_url}")
                         continue
-                    # 非重定向响应，读取完整内容
+                    # 非重定向响应，返回响应对象供调用者读取
                     return response
             except Exception as e:
                 logger.error(f"请求失败 {current_url}: {e}")
                 return None
 
+        # 超过最大重定向次数
         logger.warning(f"超过最大重定向次数 ({max_redirects})，URL: {url}")
         return None
 
@@ -351,6 +358,11 @@ class WebSearcher:
                 response = await self._safe_get(cn_url, max_redirects=5)
 
             if response is None:
+                return []
+
+            # 只有在状态码为 200 时才读取响应体
+            if response.status != 200:
+                logger.warning(f"必应返回非200状态码: {response.status}")
                 return []
 
             html = await response.text()
