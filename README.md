@@ -4,11 +4,11 @@
 
 # MCP Web Search Server
 
-A free, API-key-free web search MCP (Model Context Protocol) server supporting DuckDuckGo, Bing, and optional SerpAPI/Tavily for enhanced search quality.
+A free, API-key-free web search MCP (Model Context Protocol) server supporting DuckDuckGo, Bing, Google, and optional SerpAPI/Tavily for enhanced search quality.
 
 ## Features
 
-- 🔍 **Multi-Engine Search**: DuckDuckGo + Bing (free, no API key required)
+- 🔍 **Multi-Engine Search**: DuckDuckGo + Bing + Google (free, no API key required)
 - 🔑 **Optional API Keys**: SerpAPI and Tavily for better search quality
 - 📄 **Web Content Fetching**: Get text content from any webpage
 - 🚀 **Async Processing**: High-performance asyncio-based async handling
@@ -75,7 +75,8 @@ Search web content with multiple engines.
 - `search_engine` (string, optional): Engine choice (default: "both")
   - `"duckduckgo"`: DuckDuckGo only
   - `"bing"`: Bing only
-  - `"both"`: DuckDuckGo + Bing
+  - `"google"`: Google only
+  - `"both"`: DuckDuckGo + Google + Bing
 
 ### Optional API Keys (for Enhanced Search)
 
