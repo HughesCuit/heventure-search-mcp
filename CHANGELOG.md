@@ -6,6 +6,7 @@
 - 添加搜索方法和缓存操作的单元测试，覆盖 Google、SerpAPI、Tavily 和 _safe_get
 
 ### Fixed
+- 修复 `__version__` 与 `pyproject.toml` 版本不同步问题：使用 `importlib.metadata` 从包元数据动态读取版本，消除手动维护 (#15)
 - 修复 `get_page_content` 未使用 `_safe_get` 导致的重定向未处理和 timeout 类型不一致问题 (#16)
 - brotli 导入去重：删除 `__aenter__` 中的重复导入，统一为模块顶部导入，添加 debug 日志确认加载状态
 - 在 `pyproject.toml` 中注册 `integration` pytest mark，消除 `PytestUnknownMarkWarning` 警告

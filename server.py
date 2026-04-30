@@ -5,6 +5,7 @@ MCP Web Search Server
 """
 
 import asyncio
+import importlib.metadata
 import logging
 import os
 import re
@@ -28,7 +29,10 @@ from mcp.types import (
     Tool,
 )
 
-__version__ = "1.4.0"
+try:
+    __version__ = importlib.metadata.version("heventure-search-mcp")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "0.0.0"
 
 # 配置日志
 logger = logging.getLogger("web-search-server")
