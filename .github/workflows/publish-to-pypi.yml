@@ -95,7 +95,7 @@ jobs:
             # 更新 pyproject.toml
             with open('pyproject.toml', 'r') as f:
                 content = f.read()
-            content = re.sub(r'version = "[^"]+"', f'version = "{new_ver}"', content)
+            content = re.sub(r'^version = "[^"]+"', f'version = "{new_ver}"', content, count=1, flags=re.MULTILINE)
             with open('pyproject.toml', 'w') as f:
                 f.write(content)
             
