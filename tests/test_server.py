@@ -255,7 +255,8 @@ class TestSearchGoogle:
     @pytest.mark.asyncio
     async def test_search_google(self, searcher):
         """测试 Google 搜索返回正确结果"""
-        google_html = """
+        google_html = (
+            """
         <html>
             <body>
                 <div id="search">
@@ -265,7 +266,11 @@ class TestSearchGoogle:
                 </div>
             </body>
         </html>
-        """ + "<!-- " + "x" * 600 + " -->"
+        """
+            + "<!-- "
+            + "x" * 600
+            + " -->"
+        )
 
         mock_response = AsyncMock()
         mock_response.status = 200
@@ -286,7 +291,12 @@ class TestSearchGoogle:
     @pytest.mark.asyncio
     async def test_search_google_empty(self, searcher):
         """测试 Google 搜索返回空结果（无 h3 标签）"""
-        empty_html = "<html><body><div id='search'><p>No results here</p></div></body></html>" + "<!-- " + "x" * 600 + " -->"
+        empty_html = (
+            "<html><body><div id='search'><p>No results here</p></div></body></html>"
+            + "<!-- "
+            + "x" * 600
+            + " -->"
+        )
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.text = AsyncMock(return_value=empty_html)
@@ -298,7 +308,12 @@ class TestSearchGoogle:
     @pytest.mark.asyncio
     async def test_search_google_captcha(self, searcher):
         """测试 Google 返回验证码页面时返回空结果"""
-        captcha_html = "<html><body>Please solve the captcha to continue</body></html>" + "<!-- " + "x" * 600 + " -->"
+        captcha_html = (
+            "<html><body>Please solve the captcha to continue</body></html>"
+            + "<!-- "
+            + "x" * 600
+            + " -->"
+        )
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.text = AsyncMock(return_value=captcha_html)
@@ -353,6 +368,7 @@ class TestSafeGet:
         final_response.status = 200
 
         call_count = 0
+
         def side_effect(url, **kwargs):
             nonlocal call_count
             call_count += 1
@@ -380,6 +396,7 @@ class TestSafeGet:
         resp_b.headers = {"Location": "https://example.com/B"}
 
         call_count = 0
+
         def side_effect(url, **kwargs):
             nonlocal call_count
             call_count += 1
@@ -403,6 +420,7 @@ class TestSafeGet:
         resp.headers = {"Location": "https://example.com/next"}
 
         call_count = 0
+
         def side_effect(url, **kwargs):
             nonlocal call_count
             call_count += 1
@@ -424,12 +442,15 @@ class TestSafeGet:
         """测试重定向时 mkt 参数被正确剥离"""
         redirect_response = AsyncMock()
         redirect_response.status = 302
-        redirect_response.headers = {"Location": "https://example.com/search?q=test&mkt=zh-CN"}
+        redirect_response.headers = {
+            "Location": "https://example.com/search?q=test&mkt=zh-CN"
+        }
 
         final_response = AsyncMock()
         final_response.status = 200
 
         call_count = 0
+
         def side_effect(url, **kwargs):
             nonlocal call_count
             call_count += 1
@@ -513,8 +534,16 @@ class TestSearchSerpAPI:
         monkeypatch.setattr(server, "SERPAPI_KEY", "test-api-key")
         api_response = {
             "organic_results": [
-                {"title": "SerpAPI Result 1", "link": "https://example.com/1", "snippet": "Snippet 1"},
-                {"title": "SerpAPI Result 2", "link": "https://example.com/2", "snippet": "Snippet 2"},
+                {
+                    "title": "SerpAPI Result 1",
+                    "link": "https://example.com/1",
+                    "snippet": "Snippet 1",
+                },
+                {
+                    "title": "SerpAPI Result 2",
+                    "link": "https://example.com/2",
+                    "snippet": "Snippet 2",
+                },
             ]
         }
 
@@ -558,8 +587,16 @@ class TestSearchTavily:
         monkeypatch.setattr(server, "TAVILY_API_KEY", "test-api-key")
         api_response = {
             "results": [
-                {"title": "Tavily Result 1", "url": "https://example.com/1", "content": "Content 1"},
-                {"title": "Tavily Result 2", "url": "https://example.com/2", "content": "Content 2"},
+                {
+                    "title": "Tavily Result 1",
+                    "url": "https://example.com/1",
+                    "content": "Content 1",
+                },
+                {
+                    "title": "Tavily Result 2",
+                    "url": "https://example.com/2",
+                    "content": "Content 2",
+                },
             ]
         }
 

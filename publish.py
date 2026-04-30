@@ -53,8 +53,8 @@ def check_requirements():
 
     # 检查是否安装了构建工具
     try:
-        import build
-        import twine
+        import build  # noqa: F401
+        import twine  # noqa: F401
     except ImportError as e:
         print(f"错误: 缺少必要的构建工具: {e}")
         print("请运行: pip install build twine")

@@ -288,7 +288,7 @@ class BenchmarkReportGenerator:
         for result in results:
             all_fields.update(result.keys())
 
-        all_fields = sorted(list(all_fields))
+        all_fields = sorted(all_fields)
 
         with open(output_file, "w", newline="", encoding="utf-8") as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=all_fields)

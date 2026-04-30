@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 # Ensure brotli is available for aiohttp to handle br encoding
 try:
     import brotli  # noqa: F401
+
     logging.getLogger("web-search-server").debug("brotli loaded successfully")
 except ImportError:
     pass
@@ -114,7 +115,9 @@ class WebSearcher:
 
         # SOCKS 代理支持
         if SOCKS_PROXY and aiohttp_socks:
-            connector = aiohttp_socks.ProxyConnector.from_url(SOCKS_PROXY, ssl=ssl_context)
+            connector = aiohttp_socks.ProxyConnector.from_url(
+                SOCKS_PROXY, ssl=ssl_context
+            )
             logger.info(f"SOCKS connector created: {SOCKS_PROXY}")
         else:
             connector = aiohttp.TCPConnector(
@@ -183,7 +186,9 @@ class WebSearcher:
                             netloc = "www.bing.com"
 
                         new_query = urlencode(qs, doseq=True)
-                        location = f"{parsed.scheme}://{netloc}{parsed.path}?{new_query}".rstrip("?")
+                        location = f"{parsed.scheme}://{netloc}{parsed.path}?{new_query}".rstrip(
+                            "?"
+                        )
 
                         # 通用循环检测：检查 URL 是否已在历史中
                         if current_url in [h[0] for h in redirect_history]:
