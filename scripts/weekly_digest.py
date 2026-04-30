@@ -121,7 +121,12 @@ def main():
     projects = [target_project] if target_project else find_all_projects()
 
     if not projects:
-        print(json.dumps({"note": "没有找到任何项目数据", "searched_path": str(BASE_DIR)}, ensure_ascii=False))
+        print(
+            json.dumps(
+                {"note": "没有找到任何项目数据", "searched_path": str(BASE_DIR)},
+                ensure_ascii=False,
+            )
+        )
         return
 
     all_stats = {}
@@ -134,7 +139,9 @@ def main():
             "total_projects": len(projects),
             "total_review_runs": sum(s["review_runs"] for s in all_stats.values()),
             "total_improve_runs": sum(s["improve_runs"] for s in all_stats.values()),
-            "total_issues_created": sum(s["issues_created"] for s in all_stats.values()),
+            "total_issues_created": sum(
+                s["issues_created"] for s in all_stats.values()
+            ),
             "total_issues_closed": sum(s["issues_closed"] for s in all_stats.values()),
         }
         output = {

@@ -47,7 +47,9 @@ BASE_DIR = Path.home() / ".hermes" / "improve-loop"
 
 def write_log(project: str, log_type: str, data: dict):
     if log_type not in ("review", "improve"):
-        print(f"Unknown type: {log_type} (must be 'review' or 'improve')", file=sys.stderr)
+        print(
+            f"Unknown type: {log_type} (must be 'review' or 'improve')", file=sys.stderr
+        )
         sys.exit(1)
 
     out_dir = BASE_DIR / project / log_type
