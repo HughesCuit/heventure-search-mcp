@@ -717,26 +717,30 @@ class WebSearcher:
     async def get_page_content(self, url: str) -> str:
         """获取网页内容"""
         try:
-            async with self.session.get(url, timeout=10) as response:
-                if response.status == 200:
-                    html = await response.text()
-                    soup = BeautifulSoup(html, "html.parser")
+            response = await self._safe_get(
+                url, max_redirects=3, timeout=aiohttp.ClientTimeout(total=10)
+            )
+            if response is None or response.status != 200:
+                return ""
 
-                    # 移除脚本和样式
-                    for script in soup(["script", "style"]):
-                        script.decompose()
+            html = await response.text()
+            soup = BeautifulSoup(html, "html.parser")
 
-                    # 获取文本内容
-                    text = soup.get_text()
+            # 移除脚本和样式
+            for script in soup(["script", "style"]):
+                script.decompose()
 
-                    # 清理文本
-                    lines = (line.strip() for line in text.splitlines())
-                    chunks = (
-                        phrase.strip() for line in lines for phrase in line.split("  ")
-                    )
-                    text = " ".join(chunk for chunk in chunks if chunk)
+            # 获取文本内容
+            text = soup.get_text()
 
-                    return text[:2000]  # 限制长度
+            # 清理文本
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (
+                phrase.strip() for line in lines for phrase in line.split("  ")
+            )
+            text = " ".join(chunk for chunk in chunks if chunk)
+
+            return text[:2000]  # 限制长度
         except Exception as e:
             logger.error(f"获取页面内容错误: {e}")
             return ""
