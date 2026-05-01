@@ -8,7 +8,6 @@ import asyncio
 import importlib.metadata
 import json
 import logging
-import json
 import os
 import re
 from urllib.parse import quote_plus, urlencode
