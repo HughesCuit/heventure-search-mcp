@@ -6,6 +6,7 @@ MCP Web Search Server
 
 import asyncio
 import importlib.metadata
+import json
 import logging
 import json
 import os
