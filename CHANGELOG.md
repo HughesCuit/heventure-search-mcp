@@ -8,6 +8,8 @@
 ### Fixed
 - 修复 `__version__` 与 `pyproject.toml` 版本不同步问题：使用 `importlib.metadata` 从包元数据动态读取版本，消除手动维护 (#15)
 - 修复 `get_page_content` 未使用 `_safe_get` 导致的重定向未处理和 timeout 类型不一致问题 (#16)
+- 为 `search_duckduckgo`、`search_html_duckduckgo` 和 `search_bing` 添加请求超时 (`timeout=aiohttp.ClientTimeout(total=10)`)，防止网络异常时 MCP 服务器长时间挂起 (#17)
+- 删除 `search_duckduckgo` 方法中重复的 `import json` / `import re` 语句，统一为模块顶部导入 (#18)
 - brotli 导入去重：删除 `__aenter__` 中的重复导入，统一为模块顶部导入，添加 debug 日志确认加载状态
 - 在 `pyproject.toml` 中注册 `integration` pytest mark，消除 `PytestUnknownMarkWarning` 警告
 - 修复 SSL_VERIFY 取反逻辑错误：`not SSL_VERIFY` 导致生产环境关闭 SSL 验证、开发环境反而开启，移除多余的 `not`

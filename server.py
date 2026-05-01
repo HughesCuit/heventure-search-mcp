@@ -7,6 +7,7 @@ MCP Web Search Server
 import asyncio
 import importlib.metadata
 import logging
+import json
 import os
 import re
 from urllib.parse import quote_plus, urlencode
@@ -219,18 +220,15 @@ class WebSearcher:
             # DuckDuckGo即时答案API
             url = f"https://api.duckduckgo.com/?q={quote_plus(query)}&format=json&no_html=1&skip_disambig=1"
 
-            async with self.session.get(url) as response:
+            async with self.session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
                 if response.status in (200, 202):
                     # 尝试获取文本，手动解析JSON
                     text = await response.text()
                     try:
-                        import json
-
                         data = json.loads(text)
                     except json.JSONDecodeError:
-                        import json
-                        import re
-
                         # 尝试从JavaScript中提取JSON对象
                         match = re.search(r"\{.+\}", text, re.DOTALL)
                         if match:
@@ -306,7 +304,9 @@ class WebSearcher:
         try:
             url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
 
-            async with self.session.get(url) as response:
+            async with self.session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, "html.parser")
@@ -359,14 +359,18 @@ class WebSearcher:
                 f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results}"
             )
 
-            response = await self._safe_get(url, max_redirects=5)
+            response = await self._safe_get(
+                url, max_redirects=5, timeout=aiohttp.ClientTimeout(total=10)
+            )
             if response is None or response.status != 200:
                 logger.warning(
                     f"必应搜索失败: {response.status if response else 'None'}"
                 )
                 # 尝试 cn.bing.com 作为备用
                 cn_url = f"https://cn.bing.com/search?q={quote_plus(query)}&count={max_results}"
-                response = await self._safe_get(cn_url, max_redirects=5)
+                response = await self._safe_get(
+                    cn_url, max_redirects=5, timeout=aiohttp.ClientTimeout(total=10)
+                )
 
             if response is None:
                 return []
