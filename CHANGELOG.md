@@ -4,6 +4,7 @@
 
 ### Added
 - 添加搜索方法和缓存操作的单元测试，覆盖 Google、SerpAPI、Tavily 和 _safe_get
+- `both` 模式多引擎搜索结果 URL 去重，避免重复条目 (#20)
 
 ### Fixed
 - 修复 `web_search` 工具描述文字重复：「质量和质量和稳定性」→「质量和稳定性」(#19)
