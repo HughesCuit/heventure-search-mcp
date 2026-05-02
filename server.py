@@ -854,10 +854,15 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             tasks = [search_with_fallback(e) for e in engines]
             results_list = await asyncio.gather(*tasks)
 
-            # 合并结果
+            # 合并结果并去重
+            seen_urls = set()
             results = []
             for r in results_list:
-                results.extend(r)
+                for item in r:
+                    url = item.get("url", "")
+                    if url and url not in seen_urls:
+                        seen_urls.add(url)
+                        results.append(item)
 
             # 如果选择 both，限制总结果数量
             if search_engine == "both":
