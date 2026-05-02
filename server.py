@@ -758,7 +758,7 @@ async def handle_list_tools() -> list[Tool]:
     return [
         Tool(
             name="web_search",
-            description="搜索网页内容，支持 DuckDuckGo、Google、必应搜索引擎。可选配置 SerpAPI Key 或 Tavily API Key 提升搜索质量和质量和稳定性",
+            description="搜索网页内容，支持 DuckDuckGo、Google、必应搜索引擎。可选配置 SerpAPI Key 或 Tavily API Key 提升搜索质量和稳定性",
             inputSchema={
                 "type": "object",
                 "properties": {
