@@ -633,3 +633,358 @@ class TestSearchTavily:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestHandleListTools:
+    """Test handle_list_tools MCP dispatch"""
+
+    @pytest.mark.asyncio
+    async def test_list_tools_returns_two_tools(self):
+        """Verify handle_list_tools returns web_search and get_webpage_content"""
+        tools = await server.handle_list_tools()
+        assert len(tools) == 2
+        names = [t.name for t in tools]
+        assert "web_search" in names
+        assert "get_webpage_content" in names
+
+    @pytest.mark.asyncio
+    async def test_list_tools_web_search_schema(self):
+        """Verify web_search tool has correct input schema"""
+        tools = await server.handle_list_tools()
+        ws = next(t for t in tools if t.name == "web_search")
+        schema = ws.inputSchema
+        assert schema["type"] == "object"
+        assert "query" in schema["properties"]
+        assert "query" in schema["required"]
+        assert schema["properties"]["query"]["type"] == "string"
+
+    @pytest.mark.asyncio
+    async def test_list_tools_get_webpage_content_schema(self):
+        """Verify get_webpage_content tool has correct input schema"""
+        tools = await server.handle_list_tools()
+        gpc = next(t for t in tools if t.name == "get_webpage_content")
+        schema = gpc.inputSchema
+        assert schema["type"] == "object"
+        assert "url" in schema["properties"]
+        assert "url" in schema["required"]
+
+
+class TestHandleCallTool:
+    """Test handle_call_tool MCP dispatch"""
+
+    @pytest.mark.asyncio
+    async def test_web_search_empty_query(self):
+        """Empty query returns error message"""
+        result = await server.handle_call_tool("web_search", {"query": ""})
+        assert len(result) == 1
+        assert "不能为空" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_web_search_no_query_key(self):
+        """Missing query key returns error message"""
+        result = await server.handle_call_tool("web_search", {})
+        assert len(result) == 1
+        assert "不能为空" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_web_search_none_arguments(self):
+        """None arguments treated as empty dict, returns error"""
+        result = await server.handle_call_tool("web_search", None)
+        assert len(result) == 1
+        assert "不能为空" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_web_search_duckduckgo_engine(self, monkeypatch):
+        """DuckDuckGo engine search with mocked results"""
+        mock_results = [
+            {"title": "R1", "url": "https://a.com/1", "snippet": "S1", "type": "duckduckgo_result"},
+        ]
+
+        async def mock_search(self_inner, query, max_results=10):
+            return mock_results
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_search)
+        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[]))
+
+        result = await server.handle_call_tool(
+            "web_search", {"query": "test", "search_engine": "duckduckgo", "max_results": 5}
+        )
+        assert len(result) == 1
+        assert "R1" in result[0].text
+        assert "https://a.com/1" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_web_search_bing_engine(self, monkeypatch):
+        """Bing engine search with mocked results"""
+        mock_results = [
+            {"title": "B1", "url": "https://b.com/1", "snippet": "BS1", "type": "bing_result"},
+        ]
+
+        async def mock_search(self_inner, query, max_results=10):
+            return mock_results
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "search_bing", mock_search)
+
+        result = await server.handle_call_tool(
+            "web_search", {"query": "test", "search_engine": "bing", "max_results": 5}
+        )
+        assert len(result) == 1
+        assert "B1" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_web_search_google_engine(self, monkeypatch):
+        """Google engine search with mocked results"""
+        mock_results = [
+            {"title": "G1", "url": "https://g.com/1", "snippet": "GS1", "type": "google_result"},
+        ]
+
+        async def mock_search(self_inner, query, max_results=10):
+            return mock_results
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "search_google", mock_search)
+
+        result = await server.handle_call_tool(
+            "web_search", {"query": "test", "search_engine": "google", "max_results": 5}
+        )
+        assert len(result) == 1
+        assert "G1" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_web_search_both_engine(self, monkeypatch):
+        """Both engine runs duckduckgo + google + bing concurrently"""
+        ddg_results = [
+            {"title": "DDG1", "url": "https://ddg.com/1", "snippet": "DS1", "type": "duckduckgo_result"},
+        ]
+        google_results = [
+            {"title": "G1", "url": "https://g.com/1", "snippet": "GS1", "type": "google_result"},
+        ]
+        bing_results = [
+            {"title": "B1", "url": "https://b.com/1", "snippet": "BS1", "type": "bing_result"},
+        ]
+
+        async def mock_ddg(self_inner, query, max_results=10):
+            return ddg_results
+
+        async def mock_html_ddg(self_inner, query, max_results=10):
+            return []
+
+        async def mock_google(self_inner, query, max_results=10):
+            return google_results
+
+        async def mock_bing(self_inner, query, max_results=10):
+            return bing_results
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_ddg)
+        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", mock_html_ddg)
+        monkeypatch.setattr(WebSearcher, "search_google", mock_google)
+        monkeypatch.setattr(WebSearcher, "search_bing", mock_bing)
+
+        result = await server.handle_call_tool(
+            "web_search", {"query": "test", "search_engine": "both", "max_results": 10}
+        )
+        assert len(result) == 1
+        text = result[0].text
+        assert "DDG1" in text
+        assert "G1" in text
+        assert "B1" in text
+
+    @pytest.mark.asyncio
+    async def test_web_search_with_serpapi_key(self, monkeypatch):
+        """When SERPAPI_KEY is set, serpapi engine is appended"""
+        monkeypatch.setattr(server, "SERPAPI_KEY", "test-key")
+        monkeypatch.setattr(server, "TAVILY_API_KEY", None)
+
+        serpapi_results = [
+            {"title": "SP1", "url": "https://sp.com/1", "snippet": "SS1", "type": "serpapi_result"},
+        ]
+
+        async def mock_serpapi(self_inner, query, max_results=10):
+            return serpapi_results
+
+        async def mock_ddg(self_inner, query, max_results=10):
+            return []
+
+        async def mock_html_ddg(self_inner, query, max_results=10):
+            return []
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_ddg)
+        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", mock_html_ddg)
+        monkeypatch.setattr(WebSearcher, "search_google", AsyncMock(return_value=[]))
+        monkeypatch.setattr(WebSearcher, "search_bing", AsyncMock(return_value=[]))
+        monkeypatch.setattr(WebSearcher, "search_serpapi", mock_serpapi)
+
+        result = await server.handle_call_tool(
+            "web_search", {"query": "test", "search_engine": "duckduckgo", "max_results": 5}
+        )
+        assert len(result) == 1
+        assert "SP1" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_web_search_no_results(self, monkeypatch):
+        """All engines return empty results"""
+        async def mock_ddg(self_inner, query, max_results=10):
+            return []
+
+        async def mock_html_ddg(self_inner, query, max_results=10):
+            return []
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_ddg)
+        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", mock_html_ddg)
+        monkeypatch.setattr(WebSearcher, "search_google", AsyncMock(return_value=[]))
+        monkeypatch.setattr(WebSearcher, "search_bing", AsyncMock(return_value=[]))
+
+        result = await server.handle_call_tool(
+            "web_search", {"query": "test", "search_engine": "duckduckgo", "max_results": 5}
+        )
+        assert len(result) == 1
+        assert "未找到" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_get_webpage_content_success(self, monkeypatch):
+        """get_webpage_content returns formatted content"""
+        async def mock_get_page(self_inner, url):
+            return "Page content here"
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "get_page_content", mock_get_page)
+
+        result = await server.handle_call_tool(
+            "get_webpage_content", {"url": "https://example.com"}
+        )
+        assert len(result) == 1
+        assert "Page content here" in result[0].text
+        assert "https://example.com" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_get_webpage_content_empty_url(self):
+        """get_webpage_content with empty URL returns error"""
+        result = await server.handle_call_tool(
+            "get_webpage_content", {"url": ""}
+        )
+        assert len(result) == 1
+        assert "不能为空" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_get_webpage_content_empty_content(self, monkeypatch):
+        """get_webpage_content returns error when content is empty"""
+        async def mock_get_page(self_inner, url):
+            return ""
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "get_page_content", mock_get_page)
+
+        result = await server.handle_call_tool(
+            "get_webpage_content", {"url": "https://example.com"}
+        )
+        assert len(result) == 1
+        assert "无法获取" in result[0].text or "为空" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool_name(self):
+        """Unknown tool name returns error"""
+        result = await server.handle_call_tool("nonexistent_tool", {})
+        assert len(result) == 1
+        assert "未知工具" in result[0].text
+        assert "nonexistent_tool" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_web_search_url_dedup(self, monkeypatch):
+        """Duplicate URLs across engines are deduplicated"""
+        same_url_results_a = [
+            {"title": "A1", "url": "https://shared.com/page", "snippet": "A snippet", "type": "duckduckgo_result"},
+        ]
+        same_url_results_b = [
+            {"title": "B1", "url": "https://shared.com/page", "snippet": "B snippet", "type": "bing_result"},
+        ]
+
+        async def mock_ddg(self_inner, query, max_results=10):
+            return same_url_results_a
+
+        async def mock_html_ddg(self_inner, query, max_results=10):
+            return []
+
+        async def mock_bing(self_inner, query, max_results=10):
+            return same_url_results_b
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_ddg)
+        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", mock_html_ddg)
+        monkeypatch.setattr(WebSearcher, "search_google", AsyncMock(return_value=[]))
+        monkeypatch.setattr(WebSearcher, "search_bing", mock_bing)
+
+        result = await server.handle_call_tool(
+            "web_search", {"query": "test", "search_engine": "both", "max_results": 10}
+        )
+        assert len(result) == 1
+        # Count occurrences of the shared URL
+        count = result[0].text.count("https://shared.com/page")
+        assert count == 1, f"URL should appear once after dedup, found {count} times"

@@ -5,6 +5,7 @@
 ### Added
 - 添加搜索方法和缓存操作的单元测试，覆盖 Google、SerpAPI、Tavily 和 _safe_get
 - `both` 模式多引擎搜索结果 URL 去重，避免重复条目 (#20)
+- 添加 `handle_list_tools` 和 `handle_call_tool` MCP 协议入口函数的单元测试，覆盖空查询、不同引擎、API Key 引擎自动附加、URL 去重、未知工具等场景 (#21)
 
 ### Fixed
 - 从必装依赖中移除 lxml（server.py 从未使用 lxml 解析器，全部使用 html.parser），改为可选依赖 `lxml-parser` (#22)
