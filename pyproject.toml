@@ -30,12 +30,14 @@ classifiers = [
 dependencies = [
     "mcp>=1.0.0",
     "aiohttp>=3.8.0",
-    "aiohttp-socks>=0.8.4",
     "beautifulsoup4>=4.11.0",
-    "lxml>=4.9.0",
     "pydantic>=2.0.0",
-    "tavily>=1.0.0",
 ]
+
+[project.optional-dependencies]
+socks = ["aiohttp-socks>=0.8.4"]
+tavily = ["tavily>=1.0.0"]
+lxml-parser = ["lxml>=4.9.0"]
 
 [project.urls]
 Homepage = "https://github.com/HughesCuit/heventure-search-mcp"

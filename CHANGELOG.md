@@ -7,6 +7,8 @@
 - `both` 模式多引擎搜索结果 URL 去重，避免重复条目 (#20)
 
 ### Fixed
+- 从必装依赖中移除 lxml（server.py 从未使用 lxml 解析器，全部使用 html.parser），改为可选依赖 `lxml-parser` (#22)
+- 将 aiohttp-socks 和 tavily 从必装依赖移至可选依赖 (`socks` / `tavily`)，降低安装负担 (#3)
 - 修复 `web_search` 工具描述文字重复：「质量和质量和稳定性」→「质量和稳定性」(#19)
 - 修复 `__version__` 与 `pyproject.toml` 版本不同步问题：使用 `importlib.metadata` 从包元数据动态读取版本，消除手动维护 (#15)
 - 修复 `get_page_content` 未使用 `_safe_get` 导致的重定向未处理和 timeout 类型不一致问题 (#16)
