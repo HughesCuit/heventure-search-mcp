@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "heventure-search-mcp"
-version = "1.4.16"
+version = "1.4.17"
 description = "Free, API-key-free web search MCP server — DuckDuckGo, Bing, Google & optional SerpAPI/Tavily"
 readme = "README.md"
 requires-python = ">=3.10"
