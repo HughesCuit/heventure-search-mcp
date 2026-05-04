@@ -813,16 +813,9 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             async def search_with_fallback(engine: str):
                 """单个搜索引擎搜索，带备用方法"""
                 if engine == "duckduckgo":
-                    ddg_results = await searcher.search_duckduckgo(query, max_results)
-                    if not ddg_results or len(ddg_results) < max_results:
-                        html_results = await searcher.search_html_duckduckgo(
-                            query, max_results - len(ddg_results or [])
-                        )
-                        if isinstance(ddg_results, list):
-                            ddg_results.extend(html_results)
-                        else:
-                            ddg_results = html_results or []
-                    return ddg_results
+                    # search_duckduckgo() 内部已有三层回退到 HTML，
+                    # 无需在外层重复调用 search_html_duckduckgo()
+                    return await searcher.search_duckduckgo(query, max_results)
                 elif engine == "bing":
                     return await searcher.search_bing(query, max_results)
                 elif engine == "google":
