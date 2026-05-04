@@ -551,6 +551,34 @@ class TestCache:
         assert key1 != key3  # 不同 max_results
         assert key1 == WebSearcher._get_cache_key("test query", "google", 10)
 
+    def test_cache_key_query_normalization(self):
+        """测试缓存键的查询归一化：语义相同的查询产生相同缓存键"""
+        # 大小写归一化
+        key1 = WebSearcher._get_cache_key("Python Tutorial", "google", 10)
+        key2 = WebSearcher._get_cache_key("python tutorial", "google", 10)
+        assert key1 == key2, "大小写不同应产生相同缓存键"
+
+        # 多空格归一化
+        key3 = WebSearcher._get_cache_key("Python  tutorial", "google", 10)
+        key4 = WebSearcher._get_cache_key("Python   tutorial", "google", 10)
+        assert key3 == key4, "多空格应合并为单空格"
+
+        # 首尾空格归一化
+        key5 = WebSearcher._get_cache_key("  Python tutorial  ", "google", 10)
+        key6 = WebSearcher._get_cache_key("Python tutorial", "google", 10)
+        assert key5 == key6, "首尾空格应被去除"
+
+        # 组合场景
+        key7 = WebSearcher._get_cache_key("  Python  tutorial  ", "google", 10)
+        assert key7 == key6, "组合归一化应产生相同缓存键"
+
+    def test_normalize_query(self):
+        """测试 _normalize_query 方法"""
+        assert WebSearcher._normalize_query("Hello World") == "hello world"
+        assert WebSearcher._normalize_query("  spaces  ") == "spaces"
+        assert WebSearcher._normalize_query("multiple   spaces") == "multiple spaces"
+        assert WebSearcher._normalize_query("Mixed CASE  With   Spaces") == "mixed case with spaces"
+
     @pytest.mark.asyncio
     async def test_cache_hit_skips_network(self):
         """测试缓存命中时不发起网络请求"""

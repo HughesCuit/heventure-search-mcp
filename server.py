@@ -87,9 +87,15 @@ class WebSearcher:
         self.headers = self.DEFAULT_HEADERS.copy()
 
     @staticmethod
+    def _normalize_query(query: str) -> str:
+        """归一化查询字符串：小写、合并空格、去首尾空格"""
+        return re.sub(r"\s+", " ", query.lower()).strip()
+
+    @staticmethod
     def _get_cache_key(query: str, engine: str, max_results: int) -> str:
         """生成缓存键"""
-        return f"{engine}:{query}:{max_results}"
+        normalized = WebSearcher._normalize_query(query)
+        return f"{engine}:{normalized}:{max_results}"
 
     @staticmethod
     def _get_from_cache(key: str) -> list | None:
