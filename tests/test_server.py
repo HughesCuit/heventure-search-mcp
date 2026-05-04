@@ -37,52 +37,61 @@ class TestWebSearcher:
     @pytest.mark.asyncio
     async def test_search_duckduckgo(self, searcher):
         """测试 DuckDuckGo 搜索"""
-        # 使用 mock 模拟 API 响应
+        # 使用 mock 模拟 API 响应 —— 代码用 response.text() + json.loads()
+        import json as _json
+
+        data = {
+            "Answer": "Test Answer",
+            "AnswerURL": "https://example.com",
+            "RelatedTopics": [
+                {
+                    "Text": "Result 1 - https://example.com/1",
+                    "FirstURL": "https://example.com/1",
+                },
+                {
+                    "Text": "Result 2 - https://example.com/2",
+                    "FirstURL": "https://example.com/2",
+                },
+            ],
+        }
+
+        async def async_text():
+            return _json.dumps(data)
+
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "Answer": "Test Answer",
-                "AnswerURL": "https://example.com",
-                "RelatedTopics": [
-                    {
-                        "Text": "Result 1 - https://example.com/1",
-                        "FirstURL": "https://example.com/1",
-                    },
-                    {
-                        "Text": "Result 2 - https://example.com/2",
-                        "FirstURL": "https://example.com/2",
-                    },
-                ],
-            }
-        )
+        mock_response.text = async_text
 
-        mock_session = AsyncMock()
-        mock_session.get = AsyncMock(
-            return_value=AsyncMock(
-                __aenter__=AsyncMock(return_value=mock_response),
-                __aexit__=AsyncMock(return_value=None),
-            )
-        )
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
         searcher.session = mock_session
 
         results = await searcher.search_duckduckgo("test query", max_results=5)
         assert isinstance(results, list)
+        assert len(results) >= 1  # 应该有 Answer + RelatedTopics
 
     @pytest.mark.asyncio
     async def test_search_duckduckgo_empty(self, searcher):
         """测试 DuckDuckGo 空结果"""
+        import json as _json
+
+        async def async_text():
+            return _json.dumps({"Answer": "", "RelatedTopics": []})
+
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={"Answer": "", "RelatedTopics": []})
+        mock_response.text = async_text
 
-        mock_session = AsyncMock()
-        mock_session.get = AsyncMock(
-            return_value=AsyncMock(
-                __aenter__=AsyncMock(return_value=mock_response),
-                __aexit__=AsyncMock(return_value=None),
-            )
-        )
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
         searcher.session = mock_session
 
         results = await searcher.search_duckduckgo("test query")
@@ -91,8 +100,8 @@ class TestWebSearcher:
     @pytest.mark.asyncio
     async def test_search_duckduckgo_error(self, searcher):
         """测试 DuckDuckGo 搜索错误处理"""
-        mock_session = AsyncMock()
-        mock_session.get = AsyncMock(side_effect=Exception("Network error"))
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=Exception("Network error"))
         searcher.session = mock_session
 
         results = await searcher.search_duckduckgo("test query")
@@ -212,8 +221,8 @@ class TestWebSearcher:
     @pytest.mark.asyncio
     async def test_get_page_content_error(self, searcher):
         """测试获取网页内容错误处理"""
-        mock_session = AsyncMock()
-        mock_session.get = AsyncMock(side_effect=Exception("Network error"))
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=Exception("Network error"))
         searcher.session = mock_session
 
         content = await searcher.get_page_content("https://example.com")
