@@ -63,8 +63,9 @@ class WebSearcher:
     """网页搜索器类"""
 
     # 类级别的缓存（搜索结果缓存）
-    _search_cache: dict = {}
+    _search_cache: dict = {}  # key -> (results, timestamp)
     _cache_max_size: int = 100
+    _cache_ttl_seconds: int = 300  # 5 minutes default TTL
 
     # 更好的 headers 来避免被网站阻止
     DEFAULT_HEADERS = {
@@ -92,12 +93,23 @@ class WebSearcher:
 
     @staticmethod
     def _get_from_cache(key: str) -> list | None:
-        """从缓存获取结果"""
-        return WebSearcher._search_cache.get(key)
+        """从缓存获取结果，检查 TTL"""
+        import time
+
+        entry = WebSearcher._search_cache.get(key)
+        if entry is None:
+            return None
+        results, ts = entry
+        if time.monotonic() - ts > WebSearcher._cache_ttl_seconds:
+            del WebSearcher._search_cache[key]
+            return None
+        return results
 
     @staticmethod
     def _set_to_cache(key: str, results: list) -> None:
-        """设置缓存结果"""
+        """设置缓存结果（带时间戳）"""
+        import time
+
         # 简单LRU：超过最大 size 时清除最早的一半
         if len(WebSearcher._search_cache) >= WebSearcher._cache_max_size:
             # 清除一半缓存
@@ -106,7 +118,7 @@ class WebSearcher:
             ]
             for k in keys_to_remove:
                 del WebSearcher._search_cache[k]
-        WebSearcher._search_cache[key] = results
+        WebSearcher._search_cache[key] = (results, time.monotonic())
 
     @staticmethod
     def clear_cache() -> None:
@@ -216,6 +228,11 @@ class WebSearcher:
 
     async def search_duckduckgo(self, query: str, max_results: int = 10) -> list:
         """使用DuckDuckGo进行搜索"""
+        cache_key = self._get_cache_key(query, "duckduckgo", max_results)
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            logger.debug(f"DuckDuckGo 缓存命中: {query}")
+            return cached
         try:
             # DuckDuckGo即时答案API
             url = f"https://api.duckduckgo.com/?q={quote_plus(query)}&format=json&no_html=1&skip_disambig=1"
@@ -289,6 +306,7 @@ class WebSearcher:
                     if not results:
                         return await self.search_html_duckduckgo(query, max_results)
 
+                    self._set_to_cache(cache_key, results)
                     return results
                 else:
                     logger.warning(
@@ -353,6 +371,11 @@ class WebSearcher:
         注意: 不在 URL 中使用 mkt 参数，因为 Bing 会通过 mkt=zh-CN 在 bing.com 和 cn.bing.com
         之间形成无限重定向循环 (_safe_get 会自动剥离该参数)
         """
+        cache_key = self._get_cache_key(query, "bing", max_results)
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            logger.debug(f"Bing 缓存命中: {query}")
+            return cached
         try:
             # 不使用 mkt 参数，避免 Bing 重定向循环问题
             url = (
@@ -482,6 +505,7 @@ class WebSearcher:
                     }
                 )
 
+            self._set_to_cache(cache_key, results)
             return results
         except Exception as e:
             logger.error(f"必应搜索错误: {e}")
@@ -494,6 +518,11 @@ class WebSearcher:
         特别是在非桌面环境中。此方法为尽力而为，不保证始终可用。
         建议使用 DuckDuckGo 作为默认搜索引擎。
         """
+        cache_key = self._get_cache_key(query, "google", max_results)
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            logger.debug(f"Google 缓存命中: {query}")
+            return cached
         try:
             params = urlencode(
                 {
@@ -608,6 +637,7 @@ class WebSearcher:
 
                     if results:
                         logger.info(f"Google 搜索返回 {len(results)} 条结果")
+                        self._set_to_cache(cache_key, results)
                         return results
                     else:
                         logger.info("Google 搜索返回 0 条结果")
@@ -627,6 +657,11 @@ class WebSearcher:
         文档: https://serpapi.com/search-api
         免费额度: 每月 100 次
         """
+        cache_key = self._get_cache_key(query, "serpapi", max_results)
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            logger.debug(f"SerpAPI 缓存命中: {query}")
+            return cached
         try:
             if not SERPAPI_KEY:
                 logger.warning("SerpAPI Key 未配置")
@@ -660,6 +695,7 @@ class WebSearcher:
                         )
 
                     logger.info(f"SerpAPI 返回 {len(results)} 条结果")
+                    self._set_to_cache(cache_key, results)
                     return results
                 elif response.status == 403:
                     logger.error("SerpAPI API Key 无效或配额用尽")
@@ -676,6 +712,11 @@ class WebSearcher:
         文档: https://docs.tavily.com/
         免费额度: 每月 1000 次
         """
+        cache_key = self._get_cache_key(query, "tavily", max_results)
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            logger.debug(f"Tavily 缓存命中: {query}")
+            return cached
         try:
             if not TAVILY_API_KEY:
                 logger.warning("Tavily API Key 未配置")
@@ -711,6 +752,7 @@ class WebSearcher:
                         )
 
                     logger.info(f"Tavily 返回 {len(results)} 条结果")
+                    self._set_to_cache(cache_key, results)
                     return results
                 elif response.status == 401:
                     logger.error("Tavily API Key 无效")

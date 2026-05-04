@@ -31,7 +31,8 @@ class TestWebSearcher:
 
     @pytest.fixture
     def searcher(self):
-        """创建 WebSearcher 实例"""
+        """创建 WebSearcher 实例（每个测试清空缓存）"""
+        WebSearcher.clear_cache()
         return WebSearcher()
 
     @pytest.mark.asyncio
@@ -259,6 +260,7 @@ class TestSearchGoogle:
 
     @pytest.fixture
     def searcher(self):
+        WebSearcher.clear_cache()
         return WebSearcher()
 
     @pytest.mark.asyncio
@@ -341,10 +343,11 @@ class TestSearchGoogle:
 
 
 class TestSafeGet:
-    """_safe_get 重定向处理测试"""
+    """_safe_get 测试类"""
 
     @pytest.fixture
     def searcher(self):
+        WebSearcher.clear_cache()
         return WebSearcher()
 
     @pytest.mark.asyncio
@@ -522,12 +525,51 @@ class TestCache:
         # overflow_key 应该存在
         assert WebSearcher._get_from_cache("overflow_key") is not None
 
+    def test_cache_ttl_expiry(self):
+        """测试缓存 TTL 过期后返回 None"""
+        import time
+
+        key = "ttl_test"
+        results = [{"title": "TTL Test"}]
+        WebSearcher._set_to_cache(key, results)
+        assert WebSearcher._get_from_cache(key) == results
+
+        # 手动修改时间戳使其过期
+        results_stored, old_ts = WebSearcher._search_cache[key]
+        WebSearcher._search_cache[key] = (results, old_ts - WebSearcher._cache_ttl_seconds - 1)
+
+        # 应该返回 None 并清理过期条目
+        assert WebSearcher._get_from_cache(key) is None
+        assert key not in WebSearcher._search_cache
+
+    def test_cache_key_generation(self):
+        """测试缓存键生成"""
+        key1 = WebSearcher._get_cache_key("test query", "google", 10)
+        key2 = WebSearcher._get_cache_key("test query", "bing", 10)
+        key3 = WebSearcher._get_cache_key("test query", "google", 5)
+        assert key1 != key2  # 不同引擎
+        assert key1 != key3  # 不同 max_results
+        assert key1 == WebSearcher._get_cache_key("test query", "google", 10)
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_network(self):
+        """测试缓存命中时不发起网络请求"""
+        WebSearcher._set_to_cache(
+            "duckduckgo:cached query:5",
+            [{"title": "Cached", "url": "https://cached.com", "snippet": "", "type": "cached"}],
+        )
+        async with WebSearcher() as searcher:
+            results = await searcher.search_duckduckgo("cached query", max_results=5)
+            assert len(results) == 1
+            assert results[0]["title"] == "Cached"
+
 
 class TestSearchSerpAPI:
     """SerpAPI 搜索测试"""
 
     @pytest.fixture
     def searcher(self):
+        WebSearcher.clear_cache()
         return WebSearcher()
 
     @pytest.mark.asyncio
@@ -581,6 +623,7 @@ class TestSearchTavily:
 
     @pytest.fixture
     def searcher(self):
+        WebSearcher.clear_cache()
         return WebSearcher()
 
     @pytest.mark.asyncio
