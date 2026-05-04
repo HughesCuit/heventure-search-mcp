@@ -1,7 +1,7 @@
 {
   "env": {
-    "ANTHROPIC_AUTH_TOKEN": "tp-cep6fbrde0s3a8bzhp47ivqn1qlk4sksqhbk6791k2ntbyjw",
-    "ANTHROPIC_BASE_URL": "https://token-plan-cn.xiaomimimo.com/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "tp-sayg2uf04l3ftt8r2ku642sm0n3p5abekjsx185ow04e3bgk",
+    "ANTHROPIC_BASE_URL": "https://token-plan-sgp.xiaomimimo.com/anthropic",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "mimo-v2.5",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "mimo-v2.5-pro",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "mimo-v2.5-pro",
