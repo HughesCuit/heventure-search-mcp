@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "heventure-search-mcp"
 version = "1.4.16"
-description = "一个无需API key的网页搜索MCP服务器，支持DuckDuckGo、Google和必应搜索"
+description = "Free, API-key-free web search MCP server — DuckDuckGo, Bing, Google & optional SerpAPI/Tavily"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
