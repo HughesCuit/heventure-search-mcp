@@ -2,6 +2,7 @@
 测试用例 for heventure-search-mcp
 """
 
+import json
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
@@ -848,6 +849,90 @@ class TestHandleCallTool:
         assert "R1" in result[0].text
         # 关键断言：外层不应调用 search_html_duckduckgo
         html_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_duckduckgo_within_engine_url_dedup(self, monkeypatch):
+        """DuckDuckGo API 返回 Answer+Abstract 共享同一 URL 时，within-engine 去重应消除重复
+
+        模拟 DuckDuckGo Instant Answer API 返回的 JSON 数据中
+        AnswerURL 和 AbstractURL 相同，验证 search_duckduckgo 不会返回重复结果。
+        """
+        shared_url = "https://example.com/shared"
+        ddg_api_response = json.dumps(
+            {
+                "Answer": "This is the answer",
+                "AnswerURL": shared_url,
+                "Abstract": "This is the abstract",
+                "AbstractURL": shared_url,
+                "Heading": "Test Heading",
+                "RelatedTopics": [
+                    {
+                        "Text": "Related topic - example.com",
+                        "FirstURL": "https://example.com/related",
+                    }
+                ],
+            }
+        )
+
+        class MockResp:
+            status = 200
+
+            async def text(self):
+                return ddg_api_response
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        def mock_get(self_inner, url, timeout=None):
+            return MockResp()
+
+        monkeypatch.setattr("aiohttp.ClientSession.get", mock_get)
+
+        async with WebSearcher() as searcher:
+            results = await searcher.search_duckduckgo("test query", max_results=10)
+
+        urls = [r["url"] for r in results]
+        assert urls.count(shared_url) == 1, (
+            f"URL {shared_url} should appear once, got {urls.count(shared_url)}"
+        )
+        assert len(results) == 2  # 1 answer/abstract + 1 related topic
+
+    @pytest.mark.asyncio
+    async def test_duckduckgo_within_engine_empty_url_dedup(self, monkeypatch):
+        """DuckDuckGo API 返回多个空 URL 结果时，最多保留一个"""
+        ddg_api_response = json.dumps(
+            {
+                "Answer": "Answer without URL",
+                "AnswerURL": "",
+                "Abstract": "Abstract without URL",
+                "AbstractURL": "",
+            }
+        )
+
+        class MockResp:
+            status = 200
+
+            async def text(self):
+                return ddg_api_response
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        def mock_get(self_inner, url, timeout=None):
+            return MockResp()
+
+        monkeypatch.setattr("aiohttp.ClientSession.get", mock_get)
+
+        async with WebSearcher() as searcher:
+            results = await searcher.search_duckduckgo("empty url test", max_results=10)
+        assert len(results) == 1, f"Expected 1 result (empty URL dedup), got {len(results)}"
+        assert results[0]["url"] == ""
 
     @pytest.mark.asyncio
     async def test_web_search_bing_engine(self, monkeypatch):

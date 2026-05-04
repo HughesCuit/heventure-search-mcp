@@ -329,10 +329,26 @@ class WebSearcher:
                             return await self.search_html_duckduckgo(query, max_results)
 
                     results = []
+                    seen_urls: set[str] = set()
+
+                    def _add_result(item: dict) -> bool:
+                        """Add result if URL is unique (empty URLs allowed once). Returns True if added."""
+                        url = item.get("url", "")
+                        if url:
+                            if url in seen_urls:
+                                return False
+                            seen_urls.add(url)
+                        else:
+                            # Allow at most one empty-URL result
+                            if "" in seen_urls:
+                                return False
+                            seen_urls.add("")
+                        results.append(item)
+                        return True
 
                     # 处理即时答案 (Answer)
                     if data.get("Answer"):
-                        results.append(
+                        _add_result(
                             {
                                 "title": "DuckDuckGo即时答案",
                                 "url": data.get("AnswerURL", ""),
@@ -343,7 +359,7 @@ class WebSearcher:
 
                     # 处理摘要 (Abstract)
                     if data.get("Abstract") and len(results) < max_results:
-                        results.append(
+                        _add_result(
                             {
                                 "title": data.get("Heading", "DuckDuckGo摘要"),
                                 "url": data.get("AbstractURL", ""),
@@ -357,7 +373,7 @@ class WebSearcher:
                         : max_results - len(results)
                     ]:
                         if isinstance(topic, dict) and "Text" in topic:
-                            results.append(
+                            _add_result(
                                 {
                                     "title": topic.get("Text", "").split(" - ")[0]
                                     if " - " in topic.get("Text", "")
