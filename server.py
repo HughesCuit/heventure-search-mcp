@@ -816,8 +816,8 @@ async def handle_list_tools() -> list[Tool]:
                     },
                     "search_engine": {
                         "type": "string",
-                        "description": "搜索引擎选择：duckduckgo / bing / google / both",
-                        "enum": ["duckduckgo", "bing", "google", "both"],
+                        "description": "搜索引擎选择：duckduckgo / bing / google / serpapi / tavily / both",
+                        "enum": ["duckduckgo", "bing", "google", "serpapi", "tavily", "both"],
                         "default": "both",
                     },
                 },
@@ -877,15 +877,17 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 "duckduckgo": ["duckduckgo"],
                 "bing": ["bing"],
                 "google": ["google"],
+                "serpapi": ["serpapi"],
+                "tavily": ["tavily"],
                 "both": ["duckduckgo", "google", "bing"],
             }.get(search_engine, ["duckduckgo"])
 
             # 如果有 SerpAPI Key，添加 SerpAPI 搜索（优先级最高）
-            if SERPAPI_KEY:
+            if SERPAPI_KEY and "serpapi" not in engines:
                 engines.append("serpapi")
 
             # 如果有 Tavily API Key，添加 Tavily 搜索
-            if TAVILY_API_KEY:
+            if TAVILY_API_KEY and "tavily" not in engines:
                 engines.append("tavily")
 
             # 并发执行所有搜索
@@ -923,14 +925,16 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 "duckduckgo": "DuckDuckGo",
                 "bing": "必应",
                 "google": "Google",
+                "serpapi": "SerpAPI",
+                "tavily": "Tavily",
                 "both": "DuckDuckGo + Google + 必应",
             }
 
             # 添加活跃的 API 引擎
             active_engines = []
-            if SERPAPI_KEY:
+            if SERPAPI_KEY and search_engine != "serpapi":
                 active_engines.append("SerpAPI")
-            if TAVILY_API_KEY:
+            if TAVILY_API_KEY and search_engine != "tavily":
                 active_engines.append("Tavily")
 
             engine_desc = search_engines_used.get(search_engine, "DuckDuckGo")
