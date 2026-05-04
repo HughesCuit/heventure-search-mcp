@@ -1131,3 +1131,85 @@ class TestHandleCallTool:
         # Count occurrences of the shared URL
         count = result[0].text.count("https://shared.com/page")
         assert count == 1, f"URL should appear once after dedup, found {count} times"
+
+    @pytest.mark.asyncio
+    async def test_max_results_clamped_above上限(self, monkeypatch):
+        """max_results > 20 is clamped to 20"""
+        received_max = []
+
+        async def mock_ddg(self_inner, query, max_results=10):
+            received_max.append(max_results)
+            return []
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_ddg)
+        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[]))
+        monkeypatch.setattr(WebSearcher, "search_google", AsyncMock(return_value=[]))
+        monkeypatch.setattr(WebSearcher, "search_bing", AsyncMock(return_value=[]))
+
+        await server.handle_call_tool(
+            "web_search", {"query": "test", "search_engine": "duckduckgo", "max_results": 1000}
+        )
+        assert received_max[-1] == 20, f"max_results should be clamped to 20, got {received_max[-1]}"
+
+    @pytest.mark.asyncio
+    async def test_max_results_clamped_below_minimum(self, monkeypatch):
+        """max_results < 1 is clamped to 1"""
+        received_max = []
+
+        async def mock_ddg(self_inner, query, max_results=10):
+            received_max.append(max_results)
+            return []
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_ddg)
+        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[]))
+        monkeypatch.setattr(WebSearcher, "search_google", AsyncMock(return_value=[]))
+        monkeypatch.setattr(WebSearcher, "search_bing", AsyncMock(return_value=[]))
+
+        await server.handle_call_tool(
+            "web_search", {"query": "test", "search_engine": "duckduckgo", "max_results": -5}
+        )
+        assert received_max[-1] == 1, f"max_results should be clamped to 1, got {received_max[-1]}"
+
+    @pytest.mark.asyncio
+    async def test_max_results_non_integer_handled(self, monkeypatch):
+        """Non-integer max_results is coerced to int and clamped"""
+        received_max = []
+
+        async def mock_ddg(self_inner, query, max_results=10):
+            received_max.append(max_results)
+            return []
+
+        async def mock_init(self_inner):
+            return self_inner
+
+        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
+            pass
+
+        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
+        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
+        monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_ddg)
+        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[]))
+        monkeypatch.setattr(WebSearcher, "search_google", AsyncMock(return_value=[]))
+        monkeypatch.setattr(WebSearcher, "search_bing", AsyncMock(return_value=[]))
+
+        # String that looks like a number
+        await server.handle_call_tool(
+            "web_search", {"query": "test", "search_engine": "duckduckgo", "max_results": "15"}
+        )
+        assert received_max[-1] == 15, f"String '15' should be coerced to int 15, got {received_max[-1]}"

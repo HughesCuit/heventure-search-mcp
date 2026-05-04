@@ -841,6 +841,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     if name == "web_search":
         query = arguments.get("query", "")
         max_results = arguments.get("max_results", 10)
+        max_results = max(1, min(int(max_results), 20))  # enforce schema bounds
         search_engine = arguments.get("search_engine", "both")
 
         if not query:
