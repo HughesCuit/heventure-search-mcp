@@ -457,7 +457,7 @@ class WebSearcher:
                 if p_elem:
                     snippet = p_elem.get_text(strip=True)
                 if not snippet:
-                    for p in soup.find_all("p"):
+                    for p in item.find_all("p"):
                         p_text = p.get_text(strip=True)
                         if len(p_text) > 20 and p_text not in title:
                             snippet = p_text
