@@ -6,6 +6,7 @@ MCP Web Search Server
 
 import asyncio
 import importlib.metadata
+import ipaddress
 import json
 import logging
 import os
@@ -160,6 +161,67 @@ class WebSearcher:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
             await self.session.close()
+
+    @staticmethod
+    def _validate_url(url: str) -> str | None:
+        """验证 URL 防止 SSRF 攻击。
+
+        检查项:
+        - 只允许 http/https 协议
+        - 拒绝回环地址 (127.0.0.0/8, ::1)
+        - 拒绝 RFC 1918 私有地址 (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+        - 拒绝链路本地地址 (169.254.0.0/16, fe80::/10)
+        - 拒绝云元数据端点 (169.254.169.254)
+        - 拒绝 IPv6 ULA (fc00::/7)
+        - 拒绝 IPv4 未指定地址 (0.0.0.0)
+
+        返回 None 表示拒绝，返回验证后的 URL 表示允许。
+        """
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return None
+
+        # 1. 只允许 http/https 协议
+        if parsed.scheme not in ("http", "https"):
+            return None
+
+        hostname = parsed.hostname
+        if not hostname:
+            return None
+
+        # 2. 检查是否为 IP 地址（直接 IP 或方括号中的 IPv6）
+        try:
+            ip = ipaddress.ip_address(hostname)
+        except ValueError:
+            # hostname 不是 IP，是域名 — 域名本身安全，但需在连接时再解析
+            # 这里只做域名格式基本检查
+            if not re.match(r"^[a-zA-Z0-9._-]+$", hostname):
+                return None
+            return url
+
+        # 3. IP 地址安全检查
+        if ip.is_loopback:
+            return None
+        if ip.is_link_local:
+            return None
+        if ip.is_reserved:
+            return None
+        if ip.is_private:
+            return None
+        if ip.is_unspecified:
+            return None
+
+        return url
+
+    @staticmethod
+    def _is_ip_private(hostname: str) -> bool:
+        """检查解析后的 IP 是否为私有/保留地址（用于重定向后的二次检查）"""
+        try:
+            ip = ipaddress.ip_address(hostname)
+            return ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_private or ip.is_unspecified
+        except ValueError:
+            return False
 
     async def _safe_get(
         self, url: str, max_redirects: int = 5, **kwargs
@@ -768,6 +830,11 @@ class WebSearcher:
 
     async def get_page_content(self, url: str) -> str:
         """获取网页内容"""
+        # SSRF 防护：验证 URL 安全性
+        validated = self._validate_url(url)
+        if validated is None:
+            logger.warning(f"SSRF 防护：拒绝访问不安全的 URL: {url}")
+            return ""
         try:
             response = await self._safe_get(
                 url, max_redirects=3, timeout=aiohttp.ClientTimeout(total=10)
@@ -952,6 +1019,10 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
         if not url:
             return [TextContent(type="text", text="错误：URL不能为空")]
+
+        # SSRF 防护：在入口处即验证 URL
+        if WebSearcher._validate_url(url) is None:
+            return [TextContent(type="text", text="错误：URL 不安全，仅允许公网 HTTP(S) 地址")]
 
         async with WebSearcher() as searcher:
             content = await searcher.get_page_content(url)

@@ -1241,3 +1241,149 @@ class TestHandleCallTool:
             "web_search", {"query": "test", "search_engine": "duckduckgo", "max_results": "15"}
         )
         assert received_max[-1] == 15, f"String '15' should be coerced to int 15, got {received_max[-1]}"
+
+
+
+class TestSSRFValidation:
+    """SSRF URL 验证测试"""
+
+    def test_validate_url_allows_https(self):
+        """正常 HTTPS URL 应通过验证"""
+        assert WebSearcher._validate_url("https://example.com") is not None
+
+    def test_validate_url_allows_http(self):
+        """正常 HTTP URL 应通过验证"""
+        assert WebSearcher._validate_url("http://example.com") is not None
+
+    def test_validate_url_allows_https_with_path(self):
+        """带路径的 HTTPS URL 应通过"""
+        assert WebSearcher._validate_url("https://example.com/path?q=1") is not None
+
+    def test_validate_url_rejects_file_scheme(self):
+        """file:// 协议应被拒绝"""
+        assert WebSearcher._validate_url("file:///etc/passwd") is None
+
+    def test_validate_url_rejects_ftp_scheme(self):
+        """ftp:// 协议应被拒绝"""
+        assert WebSearcher._validate_url("ftp://example.com/file") is None
+
+    def test_validate_url_rejects_data_scheme(self):
+        """data: 协议应被拒绝"""
+        assert WebSearcher._validate_url("data:text/html,<script>alert(1)</script>") is None
+
+    def test_validate_url_rejects_javascript_scheme(self):
+        """javascript: 协议应被拒绝"""
+        assert WebSearcher._validate_url("javascript:alert(1)") is None
+
+    def test_validate_url_rejects_loopback_ipv4(self):
+        """127.x.x.x 回环地址应被拒绝"""
+        assert WebSearcher._validate_url("http://127.0.0.1") is None
+        assert WebSearcher._validate_url("http://127.0.0.1:8080/path") is None
+        assert WebSearcher._validate_url("http://127.255.255.255") is None
+
+    def test_validate_url_rejects_loopback_ipv6(self):
+        """IPv6 回环地址应被拒绝"""
+        assert WebSearcher._validate_url("http://[::1]") is None
+        assert WebSearcher._validate_url("http://[::1]:8080") is None
+
+    def test_validate_url_rejects_rfc1918_10(self):
+        """10.x.x.x 私有地址应被拒绝"""
+        assert WebSearcher._validate_url("http://10.0.0.1") is None
+        assert WebSearcher._validate_url("http://10.255.255.255") is None
+        assert WebSearcher._validate_url("http://10.0.0.1:3000/api") is None
+
+    def test_validate_url_rejects_rfc1918_172(self):
+        """172.16-31.x.x 私有地址应被拒绝"""
+        assert WebSearcher._validate_url("http://172.16.0.1") is None
+        assert WebSearcher._validate_url("http://172.31.255.255") is None
+        assert WebSearcher._validate_url("http://172.20.0.1:8080") is None
+
+    def test_validate_url_rejects_rfc1918_192(self):
+        """192.168.x.x 私有地址应被拒绝"""
+        assert WebSearcher._validate_url("http://192.168.1.1") is None
+        assert WebSearcher._validate_url("http://192.168.0.0") is None
+
+    def test_validate_url_rejects_link_local(self):
+        """169.254.x.x 链路本地地址应被拒绝"""
+        assert WebSearcher._validate_url("http://169.254.169.254") is None
+        assert WebSearcher._validate_url("http://169.254.0.1") is None
+
+    def test_validate_url_rejects_cloud_metadata(self):
+        """AWS/GCP/Azure 元数据端点应被拒绝"""
+        assert WebSearcher._validate_url("http://169.254.169.254/latest/meta-data/") is None
+        assert WebSearcher._validate_url("http://169.254.169.254/latest/user-data") is None
+
+    def test_validate_url_rejects_unspecified(self):
+        """0.0.0.0 未指定地址应被拒绝"""
+        assert WebSearcher._validate_url("http://0.0.0.0") is None
+
+    def test_validate_url_rejects_ipv6_ula(self):
+        """IPv6 ULA (fc00::/7) 地址应被拒绝"""
+        assert WebSearcher._validate_url("http://[fc00::1]") is None
+        assert WebSearcher._validate_url("http://[fd00::1]") is None
+
+    def test_validate_url_rejects_ipv6_link_local(self):
+        """IPv6 链路本地地址应被拒绝"""
+        assert WebSearcher._validate_url("http://[fe80::1]") is None
+
+    def test_validate_url_rejects_empty(self):
+        """空 URL 应被拒绝"""
+        assert WebSearcher._validate_url("") is None
+
+    def test_validate_url_rejects_no_scheme(self):
+        """无协议的 URL 应被拒绝"""
+        assert WebSearcher._validate_url("example.com") is None
+
+    def test_validate_url_rejects_no_hostname(self):
+        """无主机名的 URL 应被拒绝"""
+        assert WebSearcher._validate_url("http://") is None
+
+    def test_validate_url_allows_public_ip(self):
+        """公网 IP 应通过验证"""
+        assert WebSearcher._validate_url("http://8.8.8.8") is not None
+        assert WebSearcher._validate_url("https://1.1.1.1") is not None
+
+    def test_validate_url_allows_ipv6_public(self):
+        """公网 IPv6 应通过验证"""
+        assert WebSearcher._validate_url("http://[2606:4700::1]") is not None  # Cloudflare IPv6
+
+    @pytest.mark.asyncio
+    async def test_get_webpage_content_rejects_ssrf(self, monkeypatch):
+        """get_webpage_content 工具拒绝 SSRF URL"""
+        result = await server.handle_call_tool(
+            "get_webpage_content", {"url": "http://169.254.169.254/latest/meta-data/"}
+        )
+        assert len(result) == 1
+        assert "不安全" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_get_webpage_content_rejects_file_scheme(self, monkeypatch):
+        """get_webpage_content 工具拒绝 file:// 协议"""
+        result = await server.handle_call_tool(
+            "get_webpage_content", {"url": "file:///etc/passwd"}
+        )
+        assert len(result) == 1
+        assert "不安全" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_get_webpage_content_rejects_private_ip(self, monkeypatch):
+        """get_webpage_content 工具拒绝私有 IP"""
+        result = await server.handle_call_tool(
+            "get_webpage_content", {"url": "http://192.168.1.1/admin"}
+        )
+        assert len(result) == 1
+        assert "不安全" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_get_page_content_rejects_ssrf(self):
+        """get_page_content 方法拒绝 SSRF URL"""
+        async with WebSearcher() as searcher:
+            result = await searcher.get_page_content("http://127.0.0.1:8080")
+            assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_get_page_content_rejects_loopback(self):
+        """get_page_content 方法拒绝回环地址"""
+        async with WebSearcher() as searcher:
+            result = await searcher.get_page_content("http://[::1]:3000/api")
+            assert result == ""
