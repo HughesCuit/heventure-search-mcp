@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import re
-from urllib.parse import quote_plus, urlencode
+from urllib.parse import parse_qs, quote_plus, urlencode, urlparse
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -166,8 +166,6 @@ class WebSearcher:
         修复: 增加了 mkt 参数剥离逻辑，防止 Bing 的 mkt 参数导致的重定向循环
         (bing.com ↔ cn.bing.com 通过 mkt=zh-CN 参数形成无限循环)
         """
-        from urllib.parse import parse_qs, urlencode, urlparse
-
         current_url = url
         redirect_count = 0
         redirect_history = []  # 记录访问过的 URL 用于检测循环
@@ -586,8 +584,6 @@ class WebSearcher:
                         href = link.get("href", "")
                         # 处理 Google 的 /url?q= 重定向链接
                         if href.startswith("/url?q="):
-                            from urllib.parse import parse_qs, urlparse
-
                             parsed = urlparse(href)
                             qs = parse_qs(parsed.query)
                             href = qs.get("q", [href])[0]
