@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.HughesCuit/heventure-search-mcp",
+  "description": "Free web search MCP server with 5 engines: DuckDuckGo, Bing, Google, SerpAPI, Tavily",
+  "repository": {
+    "url": "https://github.com/HughesCuit/heventure-search-mcp",
+    "source": "github"
+  },
+  "version": "1.4.19",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "heventure-search-mcp",
+      "version": "1.4.19",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "SerpAPI key for enhanced Google search results",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "SERPAPI_KEY"
+        },
+        {
+          "description": "Tavily API key for enhanced search quality",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "TAVILY_API_KEY"
+        }
+      ]
+    }
+  ]
+}

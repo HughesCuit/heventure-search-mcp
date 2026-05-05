@@ -1,3 +1,4 @@
+<!-- mcp-name: io.github.HughesCuit/heventure-search-mcp -->
 [**中文**](./README_CN.md) | English
 
 ---
