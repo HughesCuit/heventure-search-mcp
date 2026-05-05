@@ -1,0 +1,12 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties: {}
+  commandFunction: |-
+    (config) => ["python", "-m", "server"]
+description: >-
+  Free, API-key-free web search MCP server. Supports DuckDuckGo, Bing, 
+  and Google without any API keys. Optionally integrates SerpAPI and 
+  Tavily for enhanced search quality. Features async processing, LRU 
+  caching, and multiple search engine fallback.
