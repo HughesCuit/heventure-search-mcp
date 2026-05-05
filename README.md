@@ -2,60 +2,43 @@
 
 ---
 
-# MCP Web Search Server
+[![PyPI version](https://img.shields.io/pypi/v/heventure-search-mcp.svg)](https://pypi.org/project/heventure-search-mcp/)
+[![Python](https://img.shields.io/pypi/pyversions/heventure-search-mcp.svg)](https://pypi.org/project/heventure-search-mcp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Downloads](https://img.shields.io/pypi/dm/heventure-search-mcp.svg)](https://pypi.org/project/heventure-search-mcp/)
 
-A free, API-key-free web search MCP (Model Context Protocol) server supporting DuckDuckGo, Bing, Google, and optional SerpAPI/Tavily for enhanced search quality.
+# 🔍 MCP Web Search Server
 
-## Features
-
-- 🔍 **Multi-Engine Search**: DuckDuckGo + Bing + Google (free, no API key required)
-- 🔑 **Optional API Keys**: SerpAPI and Tavily for better search quality
-- 📄 **Web Content Fetching**: Get text content from any webpage
-- 🚀 **Async Processing**: High-performance asyncio-based async handling
-
-## Installation
-
-### PyPI (Recommended)
+> **Free forever. No API key required.** A web search MCP server that works out of the box with Claude Desktop, Cursor, and any MCP-compatible AI tool.
 
 ```bash
 pip install heventure-search-mcp
-heventure-search-mcp
 ```
 
-### uvx
+## ✨ Why?
 
-```bash
-uvx heventure-search-mcp
-```
+Most MCP search servers require you to sign up for API keys (Bing, Google, SerpAPI...). This one works **immediately** — zero configuration, zero cost, zero sign-ups.
 
-### From Source
+| Feature | This Server | Others |
+|---------|:-----------:|:------:|
+| No API key needed | ✅ | ❌ |
+| DuckDuckGo (free) | ✅ | varies |
+| Bing (free) | ✅ | ❌ |
+| Google (free) | ✅ | ❌ |
+| Optional SerpAPI/Tavily | ✅ | ✅ |
+| Async + caching | ✅ | varies |
+| Install in 10 seconds | ✅ | varies |
 
-```bash
-pip install git+https://github.com/HughesCuit/heventure-search-mcp.git
-python -m server
-```
+## 🚀 Quick Start
 
-## Usage
+### Option 1: Claude Desktop / Cursor
 
-### MCP Client Config
+Add to your MCP config:
 
 ```json
 {
   "mcpServers": {
     "web-search": {
-      "command": "python",
-      "args": ["/path/to/server.py"]
-    }
-  }
-}
-```
-
-### Trae AI
-
-```json
-{
-  "mcpServers": {
-    "heventure-search-mcp": {
       "command": "uvx",
       "args": ["heventure-search-mcp"]
     }
@@ -63,68 +46,62 @@ python -m server
 }
 ```
 
-## Available Tools
-
-### web_search
-
-Search web content with multiple engines.
-
-**Parameters:**
-- `query` (string, required): Search query
-- `max_results` (integer, optional): Max results (default: 10, range: 1-20)
-- `search_engine` (string, optional): Engine choice (default: "both")
-  - `"duckduckgo"`: DuckDuckGo only
-  - `"bing"`: Bing only
-  - `"google"`: Google only
-  - `"both"`: DuckDuckGo + Google + Bing
-
-### Optional API Keys (for Enhanced Search)
-
-You can optionally set environment variables to enable paid search engines:
+### Option 2: Command Line
 
 ```bash
-# SerpAPI (Google search results via API, 100 searches/month free)
-export SERPAPI_KEY="your_serpapi_key"
-
-# Tavily (AI-optimized search, 1000 searches/month free)
-export TAVILY_API_KEY="your_tavily_api_key"
+pip install heventure-search-mcp
+heventure-search-mcp
 ```
 
-When API keys are configured, they will be automatically used alongside the free engines to improve search quality.
+### Option 3: Docker
 
-**Example:**
-```json
-{
-  "query": "Python tutorial",
-  "max_results": 5,
-  "search_engine": "both"
-}
+```bash
+docker run -p 8080:8080 heventure-search-mcp
 ```
 
-### get_webpage_content
+## 🔧 Available Tools
 
-Get text content from a webpage.
+### `web_search`
 
-**Parameters:**
-- `url` (string, required): Target webpage URL
+Search the web with multiple engines simultaneously.
 
-**Example:**
-```json
-{
-  "url": "https://example.com"
-}
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `query` | string | *required* | Search query |
+| `max_results` | int | 10 | Number of results (1-20) |
+| `search_engine` | string | `"both"` | `duckduckgo`, `bing`, `google`, or `both` |
+
+### `get_page_content`
+
+Extract readable text from any webpage.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `url` | string | *required* | Page URL to fetch |
+
+## 🔑 Optional: Enhanced Search
+
+The free engines work great for most use cases. For higher quality results, you can optionally add paid API keys:
+
+```bash
+# SerpAPI — 100 free searches/month
+export SERPAPI_KEY="your_key"
+
+# Tavily — 1,000 free searches/month  
+export TAVILY_API_KEY="your_key"
 ```
 
-## Error Handling
+## 🏗️ Architecture
 
-- Automatic retry on network failure
-- Graceful degradation on parse errors
-- User-friendly error messages
+- **Engines**: DuckDuckGo, Bing, Google, SerpAPI, Tavily
+- **Caching**: LRU cache with 300s TTL (100 entries max)
+- **Protocol**: MCP (Model Context Protocol)
+- **Runtime**: Python 3.10+ with asyncio
 
-## License
+## 🤝 Contributing
 
-MIT License
+Issues and Pull Requests are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## Contributing
+## 📄 License
 
-Issues and Pull Requests are welcome!
+MIT License — use it however you want.
