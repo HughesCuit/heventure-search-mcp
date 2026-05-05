@@ -231,6 +231,42 @@ class TestWebSearcher:
         content = await searcher.get_page_content("https://example.com")
         assert content == ""
 
+    @pytest.mark.asyncio
+    async def test_search_duckduckgo_non_200_fallback(self, searcher):
+        """测试 DuckDuckGo API 返回非200状态码时回退到HTML搜索"""
+        api_response = AsyncMock()
+        api_response.status = 500
+
+        html_content = """
+        <html>
+            <div class="result">
+                <a class="result__a" href="https://example.com/1">Fallback Result</a>
+                <a class="result__snippet">Fallback snippet</a>
+            </div>
+        </html>
+        """
+
+        html_response = AsyncMock()
+        html_response.status = 200
+        html_response.text = AsyncMock(return_value=html_content)
+
+        def mock_session_get(url, **kwargs):
+            cm = MagicMock()
+            if "api.duckduckgo.com" in url:
+                cm.__aenter__ = AsyncMock(return_value=api_response)
+            else:
+                cm.__aenter__ = AsyncMock(return_value=html_response)
+            cm.__aexit__ = AsyncMock(return_value=None)
+            return cm
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=mock_session_get)
+        searcher.session = mock_session
+
+        results = await searcher.search_duckduckgo("test query", max_results=5)
+        assert len(results) >= 1
+        assert results[0]["title"] == "Fallback Result"
+
 
 class TestWebSearcherIntegration:
     """集成测试"""
@@ -341,6 +377,91 @@ class TestSearchGoogle:
         searcher._safe_get = AsyncMock(side_effect=Exception("Network error"))
 
         results = await searcher.search_google("test query")
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_google_all_domains_fail(self, searcher):
+        """测试 Google 搜索所有域名都返回 None 时返回空列表"""
+
+        async def mock_safe_get(url, **kwargs):
+            return None
+
+        searcher._safe_get = mock_safe_get
+
+        results = await searcher.search_google("test query", max_results=10)
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_google_third_domain_succeeds(self, searcher):
+        """测试 Google 搜索前两个域名失败，第三个域名成功"""
+        google_html = (
+            """
+        <html>
+            <body>
+                <div id="search">
+                    <a href="https://example.com/1"><h3>Result Title 1</h3></a>
+                    <a href="https://example.com/2"><h3>Result Title 2</h3></a>
+                </div>
+            </body>
+        </html>
+        """
+            + "<!-- "
+            + "x" * 600
+            + " -->"
+        )
+
+        call_count = 0
+
+        async def mock_safe_get(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                return None
+            response = AsyncMock()
+            response.status = 200
+            response.text = AsyncMock(return_value=google_html)
+            return response
+
+        searcher._safe_get = mock_safe_get
+
+        results = await searcher.search_google("test query", max_results=10)
+        assert len(results) == 2
+        assert results[0]["title"] == "Result Title 1"
+        assert call_count == 3
+
+
+class TestSearchBing:
+    """Bing 搜索错误处理测试"""
+
+    @pytest.fixture
+    def searcher(self):
+        WebSearcher.clear_cache()
+        return WebSearcher()
+
+    @pytest.mark.asyncio
+    async def test_search_bing_both_urls_403(self, searcher):
+        """测试 Bing 搜索主URL和备用URL都返回403时返回空列表"""
+        mock_response = AsyncMock()
+        mock_response.status = 403
+
+        async def mock_safe_get(url, **kwargs):
+            return mock_response
+
+        searcher._safe_get = mock_safe_get
+
+        results = await searcher.search_bing("test query", max_results=5)
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_bing_both_urls_none(self, searcher):
+        """测试 Bing 搜索主URL和备用URL都返回 None 时返回空列表"""
+
+        async def mock_safe_get(url, **kwargs):
+            return None
+
+        searcher._safe_get = mock_safe_get
+
+        results = await searcher.search_bing("test query", max_results=5)
         assert results == []
 
 
@@ -551,7 +672,6 @@ class TestCache:
 
     def test_cache_ttl_expiry(self):
         """测试缓存 TTL 过期后返回 None"""
-        import time
 
         key = "ttl_test"
         results = [{"title": "TTL Test"}]
@@ -669,6 +789,42 @@ class TestSearchSerpAPI:
         assert results[0]["type"] == "serpapi_result"
         assert results[1]["type"] == "serpapi_result"
 
+    @pytest.mark.asyncio
+    async def test_search_serpapi_403(self, searcher, monkeypatch):
+        """测试 SerpAPI 返回403状态码时返回空列表"""
+        monkeypatch.setattr(server, "SERPAPI_KEY", "test-api-key")
+
+        mock_response = AsyncMock()
+        mock_response.status = 403
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_serpapi("test query", max_results=10)
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_serpapi_500(self, searcher, monkeypatch):
+        """测试 SerpAPI 返回500状态码时返回空列表"""
+        monkeypatch.setattr(server, "SERPAPI_KEY", "test-api-key")
+
+        mock_response = AsyncMock()
+        mock_response.status = 500
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_serpapi("test query", max_results=10)
+        assert results == []
+
 
 class TestSearchTavily:
     """Tavily 搜索测试"""
@@ -732,6 +888,42 @@ class TestSearchTavily:
         searcher.session = mock_session
 
         results = await searcher.search_tavily("test query")
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_tavily_401(self, searcher, monkeypatch):
+        """测试 Tavily 返回401状态码时返回空列表"""
+        monkeypatch.setattr(server, "TAVILY_API_KEY", "test-api-key")
+
+        mock_response = AsyncMock()
+        mock_response.status = 401
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_tavily("test query", max_results=10)
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_search_tavily_500(self, searcher, monkeypatch):
+        """测试 Tavily 返回500状态码时返回空列表"""
+        monkeypatch.setattr(server, "TAVILY_API_KEY", "test-api-key")
+
+        mock_response = AsyncMock()
+        mock_response.status = 500
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_tavily("test query", max_results=10)
         assert results == []
 
 
