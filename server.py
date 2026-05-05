@@ -853,7 +853,7 @@ class WebSearcher:
             return ""
         try:
             response = await self._safe_get(
-                url, max_redirects=3, timeout=aiohttp.ClientTimeout(total=10)
+                validated, max_redirects=3, timeout=aiohttp.ClientTimeout(total=10)
             )
             if response is None or response.status != 200:
                 return ""
