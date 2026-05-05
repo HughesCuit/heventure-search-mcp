@@ -12,6 +12,7 @@ import logging
 import socket
 import os
 import re
+import time
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse
 
 import aiohttp
@@ -102,8 +103,6 @@ class WebSearcher:
     @staticmethod
     def _get_from_cache(key: str) -> list | None:
         """从缓存获取结果，检查 TTL"""
-        import time
-
         entry = WebSearcher._search_cache.get(key)
         if entry is None:
             return None
@@ -116,8 +115,6 @@ class WebSearcher:
     @staticmethod
     def _set_to_cache(key: str, results: list) -> None:
         """设置缓存结果（带时间戳）"""
-        import time
-
         # 简单LRU：超过最大 size 时清除最早的一半
         if len(WebSearcher._search_cache) >= WebSearcher._cache_max_size:
             # 清除一半缓存
@@ -136,17 +133,17 @@ class WebSearcher:
     async def __aenter__(self):
         # 配置SSL验证
         # SSL_VERIFY=True 时启用验证，SSL_VERIFY=False 时禁用验证（用于开发环境）
-        ssl_context = SSL_VERIFY  # ssl=False 禁用验证，True/ssl.SSLContext 启用验证
+        ssl_verify = SSL_VERIFY  # ssl=False 禁用验证，True/ssl.SSLContext 启用验证
 
         # SOCKS 代理支持
         if SOCKS_PROXY and aiohttp_socks:
             connector = aiohttp_socks.ProxyConnector.from_url(
-                SOCKS_PROXY, ssl=ssl_context
+                SOCKS_PROXY, ssl=ssl_verify
             )
             logger.info(f"SOCKS connector created: {SOCKS_PROXY}")
         else:
             connector = aiohttp.TCPConnector(
-                ssl=ssl_context,  # 根据 WEB_SEARCH_SSL_VERIFY 环境变量配置
+                ssl=ssl_verify,  # 根据 WEB_SEARCH_SSL_VERIFY 环境变量配置
                 limit=10,
                 force_close=False,
                 enable_cleanup_closed=True,
@@ -247,6 +244,7 @@ class WebSearcher:
         current_url = url
         redirect_count = 0
         redirect_history = []  # 记录访问过的 URL 用于检测循环
+        redirect_history_urls = set()  # O(1) lookup for cycle detection
 
         while redirect_count < max_redirects:
             try:
@@ -293,10 +291,11 @@ class WebSearcher:
                         )
 
                         # 通用循环检测：检查 URL 是否已在历史中
-                        if current_url in [h[0] for h in redirect_history]:
+                        if current_url in redirect_history_urls:
                             logger.warning(f"检测到重定向循环，URL: {current_url}")
                             return None
                         redirect_history.append((current_url, response.status))
+                        redirect_history_urls.add(current_url)
                         redirect_count += 1
                         current_url = location
                         logger.debug(f"Redirect {redirect_count}: {current_url}")
@@ -507,10 +506,11 @@ class WebSearcher:
             html = await response.text()
 
             # 检测是否被阻止（CAPTCHA挑战等）
+            html_lower = html.lower()
             if (
-                "challenge" in html.lower()
-                or "solve the challenge" in html.lower()
-                or "captcha" in html.lower()
+                "challenge" in html_lower
+                or "solve the challenge" in html_lower
+                or "captcha" in html_lower
             ):
                 logger.warning("Bing返回了验证码挑战页面，无法获取搜索结果")
                 return []
@@ -534,7 +534,8 @@ class WebSearcher:
             # 备用: 任何包含 h2 和 a 标签的 li
             if not result_items:
                 for li in soup.find_all("li"):
-                    if li.find("h2") and li.find("h2").find("a"):
+                    h2_elem = li.find('h2')
+                    if h2_elem and h2_elem.find('a'):
                         result_items.append(li)
                         if len(result_items) >= max_results * 2:
                             break
@@ -632,11 +633,6 @@ class WebSearcher:
                     "hl": "en",
                 }
             )
-            google_headers = {
-                **self.headers,
-                "Accept-Language": "en-US,en;q=0.9",
-            }
-
             # 按优先级尝试不同域名
             urls_to_try = [
                 f"https://www.google.com/search?{params}",
@@ -650,7 +646,7 @@ class WebSearcher:
                     response = await self._safe_get(
                         url,
                         max_redirects=3,
-                        headers=google_headers,
+                        headers=self.headers,
                         timeout=aiohttp.ClientTimeout(total=10),
                     )
                     if response is None or response.status != 200:

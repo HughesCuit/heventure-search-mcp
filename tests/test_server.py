@@ -7,6 +7,7 @@ import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
 
+import aiohttp
 import pytest
 
 # 添加项目根目录到路径
