@@ -9,9 +9,9 @@ import importlib.metadata
 import ipaddress
 import json
 import logging
-import socket
 import os
 import re
+import socket
 import time
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse
 

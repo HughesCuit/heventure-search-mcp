@@ -487,6 +487,28 @@ class TestSafeGet:
         assert "mkt" not in second_call_url
         assert "q=test" in second_call_url
 
+    @pytest.mark.asyncio
+    async def test_safe_get_client_error(self, searcher):
+        """测试 aiohttp.ClientError 异常返回 None"""
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(
+            side_effect=aiohttp.ClientError("Connection error")
+        )
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_safe_get_timeout_error(self, searcher):
+        """测试 TimeoutError 异常返回 None"""
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=TimeoutError("Request timed out"))
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com")
+        assert result is None
+
 
 class TestCache:
     """缓存操作测试"""
