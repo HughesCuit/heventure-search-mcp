@@ -9,6 +9,7 @@ import importlib.metadata
 import ipaddress
 import json
 import logging
+import socket
 import os
 import re
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse
@@ -216,11 +217,20 @@ class WebSearcher:
 
     @staticmethod
     def _is_ip_private(hostname: str) -> bool:
-        """检查解析后的 IP 是否为私有/保留地址（用于重定向后的二次检查）"""
+        """检查主机名解析后的 IP 是否为私有/保留地址（用于重定向后的二次检查）"""
         try:
             ip = ipaddress.ip_address(hostname)
             return ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_private or ip.is_unspecified
         except ValueError:
+            # hostname is a domain name, resolve it to IPs
+            try:
+                addrinfos = socket.getaddrinfo(hostname, None)
+            except (socket.gaierror, OSError):
+                return True  # DNS failure → treat as private
+            for _, _, _, _, sockaddr in addrinfos:
+                ip = ipaddress.ip_address(sockaddr[0])
+                if ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_private or ip.is_unspecified:
+                    return True
             return False
 
     async def _safe_get(
@@ -254,8 +264,17 @@ class WebSearcher:
                             parsed = urlparse(current_url)
                             location = f"{parsed.scheme}://{parsed.netloc}{location}"
 
-                        # 剥离 mkt 参数以防止 Bing 重定向循环
+                        # SSRF redirect check: block redirects to private/internal IPs
                         parsed = urlparse(location)
+                        redirect_host = parsed.hostname
+                        if redirect_host and self._is_ip_private(redirect_host):
+                            logger.warning(
+                                f"SSRF blocked: redirect to private IP via {redirect_host} "
+                                f"(from {current_url})"
+                            )
+                            return None
+
+                        # 剥离 mkt 参数以防止 Bing 重定向循环
                         qs = parse_qs(parsed.query)
                         if "mkt" in qs:
                             del qs["mkt"]
@@ -930,7 +949,10 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
     if name == "web_search":
         query = arguments.get("query", "")
         max_results = arguments.get("max_results", 10)
-        max_results = max(1, min(int(max_results), 20))  # enforce schema bounds
+        try:
+            max_results = max(1, min(int(max_results), 20))  # enforce schema bounds
+        except (ValueError, TypeError):
+            max_results = 10
         search_engine = arguments.get("search_engine", "both")
 
         if not query:
