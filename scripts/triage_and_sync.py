@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Combined triage + sync: filter new issues, then sync triaged ones to Kanban."""
+import os
 import subprocess
 import sys
-import os
 
 SCRIPTS_DIR = os.path.expanduser("~/heventure-search-mcp/scripts")
 
@@ -15,7 +15,7 @@ def run_script(name: str, dry_run: bool = False) -> str:
 
 def main():
     dry_run = "--dry-run" in sys.argv
-    
+
     print("=" * 60)
     print("🔍 Issue Triage + Sync Pipeline")
     print("=" * 60)

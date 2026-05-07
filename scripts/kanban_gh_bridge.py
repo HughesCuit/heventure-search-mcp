@@ -83,7 +83,7 @@ def cmd_create(args: argparse.Namespace) -> None:
         "body": body_text,
     }
     if args.labels:
-        payload["labels"] = [l.strip() for l in args.labels.split(",") if l.strip()]
+        payload["labels"] = [label.strip() for label in args.labels.split(",") if label.strip()]
 
     result = _request("POST", f"/repos/{REPO}/issues", payload)
     print(json.dumps({"issue_number": result["number"]}))

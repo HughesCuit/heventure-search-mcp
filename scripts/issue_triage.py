@@ -70,8 +70,8 @@ def check_quality(title: str, body: str, labels: list[str]) -> tuple[bool, str]:
         return False, "Description too short — please add more details"
 
     # Check if template was filled (bug report has specific sections)
-    is_bug = any("bug" in l.lower() for l in labels)
-    is_feature = any("enhancement" in l.lower() or "feature" in l.lower() for l in labels)
+    is_bug = any("bug" in label.lower() for label in labels)
+    is_feature = any("enhancement" in label.lower() or "feature" in label.lower() for label in labels)
 
     if is_bug:
         # Bug reports should have reproduction steps
@@ -158,7 +158,7 @@ def add_label(token: str, issue_number: int, label: str):
     try:
         # Get current labels
         issue = github_api(f"/repos/{REPO}/issues/{issue_number}", token)
-        current_labels = [l["name"] for l in issue.get("labels", [])]
+        current_labels = [label["name"] for label in issue.get("labels", [])]
         if label in current_labels:
             return
         new_labels = current_labels + [label]
@@ -262,7 +262,7 @@ def main():
         num = issue["number"]
         title = issue["title"]
         body = issue.get("body", "") or ""
-        labels = [l["name"] for l in issue.get("labels", [])]
+        labels = [label["name"] for label in issue.get("labels", [])]
 
         print(f"#{num}: {title[:60]}")
 
@@ -298,7 +298,7 @@ def main():
         print(f"    ✅ Triaged (priority: {priority})")
 
     print(f"\n{'='*60}")
-    print(f"📊 Triage complete:")
+    print("📊 Triage complete:")
     print(f"   🚫 Spam closed: {stats['spam']}")
     print(f"   ❓ Needs info:  {stats['needs_info']}")
     print(f"   ✅ Triaged:     {stats['triaged']}")

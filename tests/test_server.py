@@ -1799,6 +1799,35 @@ class TestSSRFRedirectBypass:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_safe_get_blocks_redirect_to_resolved_private_hostname(self, searcher, monkeypatch):
+        """_safe_get 应阻止重定向到解析为私有 IP 的主机名"""
+        import socket as _socket
+
+        redirect_response = AsyncMock()
+        redirect_response.status = 302
+        redirect_response.headers = {"Location": "http://metadata.google.internal/latest/meta-data/"}
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=redirect_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        def mock_getaddrinfo(host, port, *args, **kwargs):
+            return [
+                (_socket.AF_INET, _socket.SOCK_STREAM, 0, "", ("10.0.0.1", 0)),
+            ]
+
+        monkeypatch.setattr(_socket, "getaddrinfo", mock_getaddrinfo)
+
+        result = await searcher._safe_get("https://example.com/start")
+        assert result is None
+        # Should only make one request — blocked before following redirect
+        assert mock_session.get.call_count == 1
+
+    @pytest.mark.asyncio
     async def test_safe_get_allows_redirect_to_public_ip(self, searcher):
         """_safe_get 应允许重定向到公网 IP"""
         redirect_response = AsyncMock()

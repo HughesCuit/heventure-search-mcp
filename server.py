@@ -243,8 +243,7 @@ class WebSearcher:
         """
         current_url = url
         redirect_count = 0
-        redirect_history = []  # 记录访问过的 URL 用于检测循环
-        redirect_history_urls = set()  # O(1) lookup for cycle detection
+        redirect_history_urls = set()  # sole cycle-detection mechanism
 
         while redirect_count < max_redirects:
             try:
@@ -294,7 +293,6 @@ class WebSearcher:
                         if current_url in redirect_history_urls:
                             logger.warning(f"检测到重定向循环，URL: {current_url}")
                             return None
-                        redirect_history.append((current_url, response.status))
                         redirect_history_urls.add(current_url)
                         redirect_count += 1
                         current_url = location
