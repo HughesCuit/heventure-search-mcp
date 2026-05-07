@@ -1838,8 +1838,13 @@ class TestSSRFRedirectBypass:
         searcher.session = mock_session
 
         def mock_getaddrinfo(host, port, *args, **kwargs):
+            if host == "metadata.google.internal":
+                return [
+                    (_socket.AF_INET, _socket.SOCK_STREAM, 0, "", ("10.0.0.1", 0)),
+                ]
+            # Public IP for everything else (e.g. example.com)
             return [
-                (_socket.AF_INET, _socket.SOCK_STREAM, 0, "", ("10.0.0.1", 0)),
+                (_socket.AF_INET, _socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0)),
             ]
 
         monkeypatch.setattr(_socket, "getaddrinfo", mock_getaddrinfo)
