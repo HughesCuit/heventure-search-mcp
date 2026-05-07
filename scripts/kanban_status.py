@@ -42,7 +42,7 @@ def get_tasks(conn):
         "FROM tasks"
     )
     cols = [d[0] for d in cur.description]
-    return [dict(zip(cols, row)) for row in cur.fetchall()]
+    return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
 
 
 def get_blocked_events(conn, task_ids):

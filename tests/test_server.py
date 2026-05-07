@@ -5,7 +5,7 @@
 import json
 import os
 import sys
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
@@ -266,6 +266,28 @@ class TestWebSearcher:
         results = await searcher.search_duckduckgo("test query", max_results=5)
         assert len(results) >= 1
         assert results[0]["title"] == "Fallback Result"
+
+    @pytest.mark.asyncio
+    async def test_search_duckduckgo_html_fallback_cached(self, searcher):
+        """HTML fallback results should be cached for subsequent calls."""
+        mock_results = [{"title": "cached test", "url": "https://test.dev/page", "snippet": "test snippet", "type": "html"}]
+
+        mock_response = AsyncMock()
+        mock_response.status = 500
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        searcher.session = mock_session
+
+        with patch.object(searcher, "search_html_duckduckgo", new_callable=AsyncMock, return_value=mock_results) as mock_html:
+            results1 = await searcher.search_duckduckgo("test query", max_results=5)
+            results2 = await searcher.search_duckduckgo("test query", max_results=5)
+
+            assert results1 == mock_results
+            assert results2 == mock_results
+            mock_html.assert_called_once()
 
 
 class TestWebSearcherIntegration:
@@ -1857,3 +1879,60 @@ class TestSSRFRedirectBypass:
         result = await searcher._safe_get("https://example.com/start")
         assert result == final_response
         assert mock_session.get.call_count == 2
+
+
+class TestSafeGetDNSRebinding:
+    """DNS rebinding SSRF 防护测试"""
+
+    @pytest.fixture
+    def searcher(self):
+        WebSearcher.clear_cache()
+        return WebSearcher()
+
+    @pytest.mark.asyncio
+    async def test_safe_get_dns_rebinding_blocked(self, searcher, monkeypatch):
+        """域名解析到私有 IP（如 127.0.0.1）时，_safe_get 应拒绝连接"""
+        import socket as _socket
+
+        def mock_getaddrinfo(host, port, *args, **kwargs):
+            return [
+                (_socket.AF_INET, _socket.SOCK_STREAM, 0, "", ("127.0.0.1", 0)),
+            ]
+
+        monkeypatch.setattr(_socket, "getaddrinfo", mock_getaddrinfo)
+
+        result = await searcher._safe_get("https://evil.example.com/attack")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_safe_get_dns_rebinding_public_allowed(self, searcher, monkeypatch):
+        """域名解析到公网 IP 时，_safe_get 应正常发起请求"""
+        import socket as _socket
+
+        def mock_getaddrinfo(host, port, *args, **kwargs):
+            return [
+                (_socket.AF_INET, _socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0)),
+            ]
+
+        monkeypatch.setattr(_socket, "getaddrinfo", mock_getaddrinfo)
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com")
+        assert result == mock_response
+
+    def test_validate_url_dns_rebinding(self):
+        """_validate_url 允许域名通过（无法做 DNS 解析），确认修复必须在 _safe_get 中"""
+        # 域名格式合法，_validate_url 不做 DNS 解析，应返回非 None
+        assert WebSearcher._validate_url("https://evil.example.com") is not None
+        # 但已知私有 IP 应被拒绝
+        assert WebSearcher._validate_url("http://127.0.0.1") is None

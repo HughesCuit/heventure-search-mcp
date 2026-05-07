@@ -245,6 +245,15 @@ class WebSearcher:
         redirect_count = 0
         redirect_history_urls = set()  # sole cycle-detection mechanism
 
+        # DNS rebinding check: resolve initial URL hostname and block private IPs
+        initial_parsed = urlparse(url)
+        initial_host = initial_parsed.hostname
+        if initial_host and self._is_ip_private(initial_host):
+            logger.warning(
+                f"SSRF blocked: initial URL hostname resolves to private IP: {initial_host}"
+            )
+            return None
+
         while redirect_count < max_redirects:
             try:
                 async with self.session.get(
@@ -337,12 +346,16 @@ class WebSearcher:
                                 logger.warning(
                                     "DuckDuckGo API返回非JSON响应，尝试备用方法"
                                 )
-                                return await self.search_html_duckduckgo(
+                                results = await self.search_html_duckduckgo(
                                     query, max_results
                                 )
+                                self._set_to_cache(cache_key, results)
+                                return results
                         else:
                             logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
-                            return await self.search_html_duckduckgo(query, max_results)
+                            results = await self.search_html_duckduckgo(query, max_results)
+                            self._set_to_cache(cache_key, results)
+                            return results
 
                     results = []
                     seen_urls: set[str] = set()
@@ -402,7 +415,9 @@ class WebSearcher:
 
                     # 如果没有返回任何结果，尝试HTML模式
                     if not results:
-                        return await self.search_html_duckduckgo(query, max_results)
+                        results = await self.search_html_duckduckgo(query, max_results)
+                        self._set_to_cache(cache_key, results)
+                        return results
 
                     self._set_to_cache(cache_key, results)
                     return results
@@ -410,7 +425,9 @@ class WebSearcher:
                     logger.warning(
                         f"DuckDuckGo API 返回非预期状态码: {response.status}"
                     )
-                    return await self.search_html_duckduckgo(query, max_results)
+                    results = await self.search_html_duckduckgo(query, max_results)
+                    self._set_to_cache(cache_key, results)
+                    return results
         except Exception as e:
             logger.error(f"DuckDuckGo搜索错误: {e}")
             return []

@@ -61,10 +61,10 @@ def run_cmd(cmd: list[str]) -> dict:
 
 def map_priority(labels: list[str]) -> int:
     """GitHub label → Kanban priority int (lower = higher priority)."""
-    for l in labels:
-        if "high" in l:
+    for lbl in labels:
+        if "high" in lbl:
             return 1
-        if "low" in l:
+        if "low" in lbl:
             return 9
     return 5  # default medium
 
@@ -149,7 +149,7 @@ def sync_github_to_kanban(conn: sqlite3.Connection, token: str) -> dict:
     skipped = []
 
     for issue in issues:
-        labels = [l["name"] for l in issue.get("labels", [])]
+        labels = [label["name"] for label in issue.get("labels", [])]
 
         # Only sync issues that passed triage
         if "triaged" not in labels:

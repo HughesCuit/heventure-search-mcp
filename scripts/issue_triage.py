@@ -57,7 +57,7 @@ def check_spam(title: str, body: str) -> tuple[bool, str]:
 
 def check_quality(title: str, body: str, labels: list[str]) -> tuple[bool, str]:
     """Returns (passes_quality, reason_if_not).
-    
+
     Checks if the issue has enough information to be actionable.
     """
     # Title too short
