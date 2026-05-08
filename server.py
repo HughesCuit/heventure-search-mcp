@@ -212,8 +212,7 @@ class WebSearcher:
 
         return url
 
-    @staticmethod
-    def _is_ip_private(hostname: str) -> bool:
+    async def _is_ip_private(self, hostname: str) -> bool:
         """检查主机名解析后的 IP 是否为私有/保留地址（用于重定向后的二次检查）"""
         try:
             ip = ipaddress.ip_address(hostname)
@@ -221,7 +220,8 @@ class WebSearcher:
         except ValueError:
             # hostname is a domain name, resolve it to IPs
             try:
-                addrinfos = socket.getaddrinfo(hostname, None)
+                loop = asyncio.get_running_loop()
+                addrinfos = await loop.getaddrinfo(hostname, None)
             except (socket.gaierror, OSError):
                 return True  # DNS failure → treat as private
             for _, _, _, _, sockaddr in addrinfos:
@@ -229,6 +229,22 @@ class WebSearcher:
                 if ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_private or ip.is_unspecified:
                     return True
             return False
+
+    async def _safe_response_text(self, response: aiohttp.ClientResponse) -> str:
+        """Read response text with graceful UnicodeDecodeError fallback.
+
+        Falls back to response.read() + manual utf-8 decode with errors='replace'
+        when the server sends content with a mismatched or missing charset declaration.
+        """
+        try:
+            return await response.text()
+        except (UnicodeDecodeError, UnicodeError):
+            logger.warning(
+                f"response.text() UnicodeDecodeError, falling back to raw decode: "
+                f"{response.url}"
+            )
+            raw = await response.read()
+            return raw.decode("utf-8", errors="replace")
 
     async def _safe_get(
         self, url: str, max_redirects: int = 5, **kwargs
@@ -248,7 +264,7 @@ class WebSearcher:
         # DNS rebinding check: resolve initial URL hostname and block private IPs
         initial_parsed = urlparse(url)
         initial_host = initial_parsed.hostname
-        if initial_host and self._is_ip_private(initial_host):
+        if initial_host and await self._is_ip_private(initial_host):
             logger.warning(
                 f"SSRF blocked: initial URL hostname resolves to private IP: {initial_host}"
             )
@@ -273,7 +289,7 @@ class WebSearcher:
                         # SSRF redirect check: block redirects to private/internal IPs
                         parsed = urlparse(location)
                         redirect_host = parsed.hostname
-                        if redirect_host and self._is_ip_private(redirect_host):
+                        if redirect_host and await self._is_ip_private(redirect_host):
                             logger.warning(
                                 f"SSRF blocked: redirect to private IP via {redirect_host} "
                                 f"(from {current_url})"
@@ -290,7 +306,16 @@ class WebSearcher:
                         netloc = parsed.netloc
                         if netloc in ("bing.com", "cn.bing.com"):
                             netloc = "www.bing.com"
-                        elif netloc.startswith("www.") and "bing" in netloc:
+                        elif netloc in (
+                            "www.bing.com",
+                            "www.bing.co.uk",
+                            "www.bing.de",
+                            "www.bing.fr",
+                            "www.bing.it",
+                            "www.bing.es",
+                            "www.bing.jp",
+                            "www.bing.com.br",
+                        ):
                             netloc = "www.bing.com"
 
                         new_query = urlencode(qs, doseq=True)
@@ -333,7 +358,7 @@ class WebSearcher:
             ) as response:
                 if response.status in (200, 202):
                     # 尝试获取文本，手动解析JSON
-                    text = await response.text()
+                    text = await self._safe_response_text(response)
                     try:
                         data = json.loads(text)
                     except json.JSONDecodeError:
@@ -441,7 +466,7 @@ class WebSearcher:
                 url, timeout=aiohttp.ClientTimeout(total=10)
             ) as response:
                 if response.status == 200:
-                    html = await response.text()
+                    html = await self._safe_response_text(response)
                     soup = BeautifulSoup(html, "html.parser")
 
                     results = []
@@ -518,7 +543,7 @@ class WebSearcher:
                 logger.warning(f"必应返回非200状态码: {response.status}")
                 return []
 
-            html = await response.text()
+            html = await self._safe_response_text(response)
 
             # 检测是否被阻止（CAPTCHA挑战等）
             html_lower = html.lower()
@@ -667,7 +692,7 @@ class WebSearcher:
                     if response is None or response.status != 200:
                         continue
 
-                    html = await response.text()
+                    html = await self._safe_response_text(response)
 
                     # 检测阻止
                     if not html or len(html) < 500:
@@ -888,7 +913,7 @@ class WebSearcher:
             if response is None or response.status != 200:
                 return ""
 
-            html = await response.text()
+            html = await self._safe_response_text(response)
             soup = BeautifulSoup(html, "html.parser")
 
             # 移除脚本和样式
