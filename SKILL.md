@@ -1,14 +1,29 @@
 ---
 name: heventure-search-mcp
 description: >
-  Free, API-key-free web search MCP server — DuckDuckGo, Bing, Google & optional SerpAPI/Tavily.
-  Install: pip install heventure-search-mcp
+  Use when: agent needs web search (multi-engine: DuckDuckGo/Bing/Google, free, no API key). Install: pip install heventure-search-mcp
 ---
-
 # heventure-search-mcp
 
 A free MCP (Model Context Protocol) web search server with no API key required for core search.
 
+## TRIGGER when...
+
+Load this MCP server when **any** of the following conditions apply:
+
+1. **User or agent needs to search the web** — e.g. "search for X", "find information about Y", "look up Z online"
+2. **Built-in `web_search` tool is unavailable or fails** — this MCP provides a fallback with multiple engines
+3. **Configuring an MCP server** — the user wants to set up `web-search` as an MCP tool in Claude Desktop, Hermes Agent, Cursor, or similar
+4. **Need free, API-key-free search** — DuckDuckGo/Bing/Google engines work without any keys
+5. **Need to fetch webpage content** — the `get_webpage_content` tool extracts text from URLs
+
+**Do NOT load when:**
+
+- Built-in `web_search` is already working and the user has no preference for MCP tools
+- The user wants to configure or deploy Firecrawl (use `firecrawl-self-hosted` skill instead)
+- The user is asking about search engine internals or API implementation details (not usage)
+
+## Quick Start
 ## Quick Start
 
 ### Run via uvx (recommended)
@@ -69,7 +84,19 @@ Search the web with multiple engines.
 |-----------|------|----------|---------|-------------|
 | `query` | string | yes | — | Search query |
 | `max_results` | integer | no | 10 | Max results (1–20) |
-| `search_engine` | string | no | `"both"` | Engine: `"duckduckgo"`, `"bing"`, `"google"`, `"serpapi"`, `"tavily"`, or `"both"` (all free engines) |
+| `search_engine` | string | no | `"both"` | Engine: `"duckduckgo"`, `"bing"`, `"google"`, `"serpapi"`, `"tavily"`, or `"both"` (see below) |
+
+#### `search_engine="both"` behavior
+
+When set to `"both"` (the default), the server:
+
+1. Runs **DuckDuckGo + Google + Bing** in parallel via `asyncio.gather`
+2. Appends **SerpAPI** / **Tavily** if their API keys (`SERPAPI_KEY`, `TAVILY_API_KEY`) are set
+3. Merges all results and **deduplicates by URL**
+4. Sorts by engine priority: SerpAPI/Tavily (0) → Google (1) → Bing (2) → DuckDuckGo (3)
+5. **Truncates to the top `max_results`** — so even though 3–5 engines run in parallel, the final list is capped
+
+For single-engine mode (e.g. `"duckduckgo"`), only that engine runs and results are returned as-is (no truncation).
 
 ### `get_webpage_content`
 
@@ -100,13 +127,53 @@ When configured, paid engines run alongside free engines automatically.
 | SerpAPI | ❌ | Yes | Google API results, 100 free/month |
 | Tavily | ❌ | Yes | AI-optimized, 1000 free/month |
 
-## Features
+## Error Handling & Timeouts
 
-- Multi-engine parallel search with `asyncio.gather`
-- Automatic result deduplication and ranking
-- Search result caching (300s TTL)
-- Graceful fallback on network errors
-- Configurable SSL verification (`WEB_SEARCH_SSL_VERIFY`)
+### CAPTCHA Detection
+
+The server detects CAPTCHA/challenge pages and gracefully degrades:
+
+| Engine | Detection Method | Behavior |
+|--------|-----------------|----------|
+| Bing | Scans HTML for `challenge`, `solve the challenge`, `captcha` (case-insensitive) | Returns empty results with warning log |
+| Google | Scans HTML for `captcha` (case-insensitive) | Skips that domain, tries next domain variant (`.com` → `.com.hk` → `.co.jp`) |
+
+CAPTCHA detection is a best-effort heuristic — it may not catch all challenge formats.
+
+### Request Timeouts
+
+| Engine | Timeout | Notes |
+|--------|---------|-------|
+| DuckDuckGo (API + HTML) | 10s | Per-request total timeout |
+| Bing | 10s | Per-request total timeout, fallback to `cn.bing.com` on failure |
+| Google | 10s | Per-request total timeout, tries 3 domains in sequence |
+| SerpAPI | 30s | API call with JSON response |
+| Tavily | 30s | API call with JSON response |
+| `get_webpage_content` | 10s | Single page fetch |
+| Shared aiohttp session | 30s | Global fallback for any request without explicit timeout |
+
+### Retry Strategy
+
+Two retry mechanisms exist, both with identical defaults:
+
+| Method | Used By | Retries | Delay | Retryable Errors |
+|--------|---------|---------|-------|-------------------|
+| `_safe_get_with_retry` | Bing, Google | 1 (total 2 attempts) | 1.0s | TimeoutError, ClientError, ConnectionError, OSError |
+| `_request_with_retry` | DuckDuckGo (API + HTML) | 1 (total 2 attempts) | 1.0s | TimeoutError, ClientError, ConnectionError, OSError |
+
+Paid engines (SerpAPI, Tavily) do NOT retry — they rely on their own API reliability.
+
+### Other Error Scenarios
+
+| Scenario | Behavior |
+|----------|----------|
+| **SSRF protection** | Blocks private/loopback/link-local/reserved IPs. DNS rebinding: resolves hostname and checks resolved IPs before connecting. |
+| **Redirect loops** | Tracks visited URLs, breaks on cycles. Bing-specific: strips `mkt` parameter and normalizes `bing.com`/`cn.bing.com` → `www.bing.com`. Max 5 redirects. |
+| **Unicode decode errors** | Falls back to raw `bytes.decode('utf-8', errors='replace')` |
+| **Non-HTML content** | `get_webpage_content` rejects PDF, images, etc. (checks `Content-Type: text/html`) |
+| **Empty response** | Google skips pages shorter than 500 chars |
+| **Cache** | 300s TTL, max 100 entries, LRU eviction. Avoids re-fetching within TTL window. |
+| **DuckDuckGo API fallback** | If JSON API fails or returns empty, falls back to HTML scraping (`html.duckduckgo.com`) |
 
 ## License
 
