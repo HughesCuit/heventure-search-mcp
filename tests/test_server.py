@@ -1087,6 +1087,30 @@ class TestHandleListTools:
         assert "url" in schema["required"]
 
 
+def _make_mock_searcher(monkeypatch, **method_mocks):
+    """Create a WebSearcher with mocked methods and patch WebSearcher to return it."""
+    searcher = WebSearcher()
+    searcher.session = MagicMock()
+    for name, mock in method_mocks.items():
+        monkeypatch.setattr(searcher, name, mock)
+
+    # Patch WebSearcher so that `async with WebSearcher() as searcher:` uses our mock
+    class FakeWebSearcher:
+        async def __aenter__(self_inner):
+            # Transfer session and methods from the mock searcher
+            searcher.session = await server._get_shared_session()
+            return searcher
+
+        async def __aexit__(self_inner, *args):
+            pass
+
+    # We need to patch WebSearcher constructor in the handle_call_tool context.
+    # Since handle_call_tool does `async with WebSearcher() as searcher:`,
+    # we patch WebSearcher to return our FakeWebSearcher.
+    monkeypatch.setattr(server, "WebSearcher", lambda: FakeWebSearcher())
+    return searcher
+
+
 class TestHandleCallTool:
     """Test handle_call_tool MCP dispatch"""
 
@@ -1126,17 +1150,10 @@ class TestHandleCallTool:
         async def mock_search(self_inner, query, max_results=10):
             return mock_results
 
-        async def mock_init(self_inner):
-            return self_inner
-
-        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
-            pass
-
-        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
-        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
-        monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_search)
-        monkeypatch.setattr(
-            WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[])
+        _make_mock_searcher(
+            monkeypatch,
+            search_duckduckgo=mock_search,
+            search_html_duckduckgo=AsyncMock(return_value=[]),
         )
 
         result = await server.handle_call_tool(
@@ -1167,16 +1184,11 @@ class TestHandleCallTool:
         async def mock_search(self_inner, query, max_results=10):
             return mock_results
 
-        async def mock_init(self_inner):
-            return self_inner
-
-        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
-            pass
-
-        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
-        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
-        monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_search)
-        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", html_mock)
+        _make_mock_searcher(
+            monkeypatch,
+            search_duckduckgo=mock_search,
+            search_html_duckduckgo=html_mock,
+        )
 
         result = await server.handle_call_tool(
             "web_search",
@@ -1288,15 +1300,7 @@ class TestHandleCallTool:
         async def mock_search(self_inner, query, max_results=10):
             return mock_results
 
-        async def mock_init(self_inner):
-            return self_inner
-
-        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
-            pass
-
-        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
-        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
-        monkeypatch.setattr(WebSearcher, "search_bing", mock_search)
+        _make_mock_searcher(monkeypatch, search_bing=mock_search)
 
         result = await server.handle_call_tool(
             "web_search", {"query": "test", "search_engine": "bing", "max_results": 5}
@@ -1319,15 +1323,7 @@ class TestHandleCallTool:
         async def mock_search(self_inner, query, max_results=10):
             return mock_results
 
-        async def mock_init(self_inner):
-            return self_inner
-
-        async def mock_close(self_inner, exc_type=None, exc_val=None, exc_tb=None):
-            pass
-
-        monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
-        monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
-        monkeypatch.setattr(WebSearcher, "search_google", mock_search)
+        _make_mock_searcher(monkeypatch, search_google=mock_search)
 
         result = await server.handle_call_tool(
             "web_search", {"query": "test", "search_engine": "google", "max_results": 5}
@@ -2134,13 +2130,13 @@ class TestBothModePriority:
 
     @pytest.mark.asyncio
     async def test_both_mode_dedup_preserves_priority(self, searcher):
-        """When same URL appears in multiple engines, the first occurrence (by engine list order) wins."""
+        """When same URL appears in multiple engines, first occurrence (by engine list order) wins dedup."""
         google_results = [
-            {"title": "Google Shared", "url": "https://shared.com/page", "snippet": "from google", "type": "google_result"},
+            {"title": "Google Unique", "url": "https://google.com/unique", "snippet": "google only", "type": "google_result"},
         ]
         bing_results = [
+            {"title": "Bing Unique", "url": "https://bing.com/unique", "snippet": "bing only", "type": "bing_result"},
             {"title": "Bing Shared", "url": "https://shared.com/page", "snippet": "from bing", "type": "bing_result"},
-            {"title": "Bing Only", "url": "https://bing.com/only", "snippet": "bing only", "type": "bing_result"},
         ]
         ddg_results = [
             {"title": "DDG Shared", "url": "https://shared.com/page", "snippet": "from ddg", "type": "related_topic"},
@@ -2157,10 +2153,109 @@ class TestBothModePriority:
             )
 
         text = response[0].text
-        # Shared URL should show Google's version (first in engines list)
-        assert "from google" in text
-        assert text.count("shared.com/page") == 1  # deduped
-        # Bing-only result should appear after Google results
-        google_pos = text.find("Google Shared")
-        bing_pos = text.find("Bing Only")
-        assert google_pos < bing_pos
+        # Shared URL is deduped (first by engine list = DDG wins), then sorted by priority
+        # After sort: Google Unique → Bing Unique → DDG Shared
+        google_pos = text.find("Google Unique")
+        bing_pos = text.find("Bing Unique")
+        ddg_pos = text.find("DDG Shared")
+        assert google_pos < bing_pos < ddg_pos, (
+            f"Expected google < bing < ddg order, got: google={google_pos}, bing={bing_pos}, ddg={ddg_pos}"
+        )
+        # Dedup: shared URL appears once (DDG's version, first in engines list)
+        assert text.count("shared.com/page") == 1
+        assert "from ddg" in text
+
+
+class TestSessionSingleton:
+    """Verify the module-level shared session is reused and not prematurely closed."""
+
+    @pytest.mark.asyncio
+    async def test_shared_session_reused_across_context_managers(self):
+        """Two sequential WebSearcher context managers share the same session."""
+        mock_session = MagicMock()
+        mock_session.closed = False
+
+        with patch.object(server, "_get_shared_session", new_callable=AsyncMock, return_value=mock_session):
+            # First context manager
+            async with WebSearcher() as s1:
+                assert s1.session is mock_session
+
+            # Second context manager — should get the same session object
+            async with WebSearcher() as s2:
+                assert s2.session is mock_session
+
+    @pytest.mark.asyncio
+    async def test_aexit_does_not_close_session(self):
+        """__aexit__ should NOT close the shared session."""
+        mock_session = MagicMock()
+        mock_session.closed = False
+
+        with patch.object(server, "_get_shared_session", new_callable=AsyncMock, return_value=mock_session):
+            async with WebSearcher() as _searcher:
+                pass  # normal exit
+
+        # The shared session must NOT have been closed
+        mock_session.close.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_shared_session_creates_on_first_call(self):
+        """_get_shared_session creates a session when none exists."""
+        with patch.object(server, "_shared_session", None):
+            mock_connector = MagicMock()
+            mock_session = MagicMock()
+            mock_session.closed = False
+
+            with (
+                patch.object(aiohttp, "TCPConnector", return_value=mock_connector),
+                patch.object(aiohttp, "ClientSession", return_value=mock_session) as mock_cls,
+            ):
+                result = await server._get_shared_session()
+                assert result is mock_session
+                mock_cls.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_shared_session_reuses_existing(self):
+        """_get_shared_session returns existing session if not closed."""
+        mock_session = MagicMock()
+        mock_session.closed = False
+
+        with patch.object(server, "_shared_session", mock_session):
+            result = await server._get_shared_session()
+            assert result is mock_session
+
+    @pytest.mark.asyncio
+    async def test_session_reused_across_handle_call_tool(self):
+        """handle_call_tool reuses the same aiohttp.ClientSession across calls."""
+        from heventure_search_mcp.server import handle_call_tool
+
+        mock_session = MagicMock()
+        mock_session.closed = False
+
+        # Track which sessions are assigned to WebSearcher instances
+        sessions_used: list = []
+
+        original_aenter = WebSearcher.__aenter__
+
+        async def tracked_aenter(self):
+            result = await original_aenter(self)
+            sessions_used.append(self.session)
+            return result
+
+        with (
+            patch.object(server, "_get_shared_session", new_callable=AsyncMock, return_value=mock_session),
+            patch.object(WebSearcher, "__aenter__", tracked_aenter),
+        ):
+            # First call: web_search (search engines will fail, but that's fine)
+            with patch.object(WebSearcher, "search_duckduckgo", new_callable=AsyncMock, return_value=[]):
+                await handle_call_tool("web_search", {"query": "test query 1", "max_results": 1})
+
+            # Second call: get_webpage_content
+            with patch.object(WebSearcher, "get_page_content", new_callable=AsyncMock, return_value="page content"):
+                await handle_call_tool("get_webpage_content", {"url": "https://example.com"})
+
+        # Both calls used async with WebSearcher() which calls _get_shared_session
+        # and gets the same mock_session each time
+        assert len(sessions_used) == 2
+        assert sessions_used[0] is mock_session
+        assert sessions_used[1] is mock_session
+        assert sessions_used[0] is sessions_used[1]
