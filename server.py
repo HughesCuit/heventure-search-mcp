@@ -52,6 +52,46 @@ if SOCKS_PROXY:
 
 server = Server("web-search-server")
 
+# 引擎优先级：数字越小优先级越高
+ENGINE_PRIORITY: dict[str, int] = {
+    "google": 1,
+    "bing": 2,
+    "duckduckgo": 3,
+    "serpapi": 0,
+    "tavily": 0,
+}
+
+# Module-level singleton session — created once in main(), reused across all calls
+_shared_session: aiohttp.ClientSession | None = None
+
+
+async def _get_shared_session() -> aiohttp.ClientSession:
+    """Return the shared aiohttp.ClientSession, creating it on first call."""
+    global _shared_session
+    if _shared_session is not None and not _shared_session.closed:
+        return _shared_session
+
+    ssl_verify = SSL_VERIFY
+
+    if SOCKS_PROXY and aiohttp_socks:
+        connector = aiohttp_socks.ProxyConnector.from_url(SOCKS_PROXY, ssl=ssl_verify)
+        logger.info(f"SOCKS connector created: {SOCKS_PROXY}")
+    else:
+        connector = aiohttp.TCPConnector(
+            ssl=ssl_verify,
+            limit=10,
+            force_close=False,
+            enable_cleanup_closed=True,
+        )
+
+    _shared_session = aiohttp.ClientSession(
+        headers=WebSearcher.DEFAULT_HEADERS,
+        connector=connector,
+        trust_env=True,
+        timeout=aiohttp.ClientTimeout(total=30),
+    )
+    return _shared_session
+
 
 class WebSearcher:
     """网页搜索器类"""
@@ -122,34 +162,13 @@ class WebSearcher:
         WebSearcher._search_cache.clear()
 
     async def __aenter__(self):
-        # 配置SSL验证
-        # SSL_VERIFY=True 时启用验证，SSL_VERIFY=False 时禁用验证（用于开发环境）
-        ssl_verify = SSL_VERIFY  # ssl=False 禁用验证，True/ssl.SSLContext 启用验证
-
-        # SOCKS 代理支持
-        if SOCKS_PROXY and aiohttp_socks:
-            connector = aiohttp_socks.ProxyConnector.from_url(
-                SOCKS_PROXY, ssl=ssl_verify
-            )
-            logger.info(f"SOCKS connector created: {SOCKS_PROXY}")
-        else:
-            connector = aiohttp.TCPConnector(
-                ssl=ssl_verify,  # 根据 WEB_SEARCH_SSL_VERIFY 环境变量配置
-                limit=10,
-                force_close=False,
-                enable_cleanup_closed=True,
-            )
-
-        self.session = aiohttp.ClientSession(
-            headers=self.headers,
-            connector=connector,
-            trust_env=True,  # 信任环境变量中的代理配置
-        )
+        self.session = await _get_shared_session()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.close()
+        # Do NOT close the shared session — it lives for the process lifetime.
+        # Just detach the reference so no one holds a stale pointer.
+        self.session = None
 
     @staticmethod
     def _validate_url(url: str) -> str | None:
@@ -207,13 +226,7 @@ class WebSearcher:
         """检查主机名解析后的 IP 是否为私有/保留地址（用于重定向后的二次检查）"""
         try:
             ip = ipaddress.ip_address(hostname)
-            return (
-                ip.is_loopback
-                or ip.is_link_local
-                or ip.is_reserved
-                or ip.is_private
-                or ip.is_unspecified
-            )
+            return ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_private or ip.is_unspecified
         except ValueError:
             # hostname is a domain name, resolve it to IPs
             try:
@@ -223,13 +236,7 @@ class WebSearcher:
                 return True  # DNS failure → treat as private
             for _, _, _, _, sockaddr in addrinfos:
                 ip = ipaddress.ip_address(sockaddr[0])
-                if (
-                    ip.is_loopback
-                    or ip.is_link_local
-                    or ip.is_reserved
-                    or ip.is_private
-                    or ip.is_unspecified
-                ):
+                if ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_private or ip.is_unspecified:
                     return True
             return False
 
@@ -381,9 +388,7 @@ class WebSearcher:
                                 return results
                         else:
                             logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
-                            results = await self.search_html_duckduckgo(
-                                query, max_results
-                            )
+                            results = await self.search_html_duckduckgo(query, max_results)
                             self._set_to_cache(cache_key, results)
                             return results
 
@@ -579,8 +584,8 @@ class WebSearcher:
             # 备用: 任何包含 h2 和 a 标签的 li
             if not result_items:
                 for li in soup.find_all("li"):
-                    h2_elem = li.find("h2")
-                    if h2_elem and h2_elem.find("a"):
+                    h2_elem = li.find('h2')
+                    if h2_elem and h2_elem.find('a'):
                         result_items.append(li)
                         if len(result_items) >= max_results * 2:
                             break
@@ -918,6 +923,12 @@ class WebSearcher:
             if response is None or response.status != 200:
                 return ""
 
+            # 检查 Content-Type：仅处理 HTML 页面，拒绝 PDF/图片等
+            content_type = response.headers.get("Content-Type", "")
+            if not content_type.startswith("text/html"):
+                logger.warning(f"不支持的内容类型: {content_type} (URL: {url})")
+                return f"不支持的内容类型: {content_type or '未知'} (仅支持 HTML 页面)"
+
             html = await self._safe_response_text(response)
             soup = BeautifulSoup(html, "html.parser")
 
@@ -960,14 +971,7 @@ async def handle_list_tools() -> list[Tool]:
                     "search_engine": {
                         "type": "string",
                         "description": "搜索引擎选择：duckduckgo / bing / google / serpapi / tavily / both",
-                        "enum": [
-                            "duckduckgo",
-                            "bing",
-                            "google",
-                            "serpapi",
-                            "tavily",
-                            "both",
-                        ],
+                        "enum": ["duckduckgo", "bing", "google", "serpapi", "tavily", "both"],
                         "default": "both",
                     },
                 },
@@ -1010,19 +1014,24 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             # 并发执行多个搜索引擎搜索
             async def search_with_fallback(engine: str):
                 """单个搜索引擎搜索，带备用方法"""
+                t0 = time.monotonic()
                 if engine == "duckduckgo":
                     # search_duckduckgo() 内部已有三层回退到 HTML，
                     # 无需在外层重复调用 search_html_duckduckgo()
-                    return await searcher.search_duckduckgo(query, max_results)
+                    results = await searcher.search_duckduckgo(query, max_results)
                 elif engine == "bing":
-                    return await searcher.search_bing(query, max_results)
+                    results = await searcher.search_bing(query, max_results)
                 elif engine == "google":
-                    return await searcher.search_google(query, max_results)
+                    results = await searcher.search_google(query, max_results)
                 elif engine == "serpapi":
-                    return await searcher.search_serpapi(query, max_results)
+                    results = await searcher.search_serpapi(query, max_results)
                 elif engine == "tavily":
-                    return await searcher.search_tavily(query, max_results)
-                return []
+                    results = await searcher.search_tavily(query, max_results)
+                else:
+                    results = []
+                elapsed = time.monotonic() - t0
+                logger.info(f"{engine}: {len(results)} results in {elapsed:.2f}s")
+                return results
 
             # 根据选择的搜索引擎构建任务列表
             # 优先级：免费引擎 -> API Key 增强引擎
@@ -1047,15 +1056,24 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             tasks = [search_with_fallback(e) for e in engines]
             results_list = await asyncio.gather(*tasks)
 
-            # 合并结果并去重
-            seen_urls = set()
-            results = []
-            for r in results_list:
+            # 合并结果并去重（按引擎优先级排序）
+            seen_urls: set[str] = set()
+            results: list[dict] = []
+            for engine, r in zip(engines, results_list):
                 for item in r:
                     url = item.get("url", "")
                     if url and url not in seen_urls:
                         seen_urls.add(url)
+                        # Tag with engine priority for stable sorting
+                        item["_engine_priority"] = ENGINE_PRIORITY.get(engine, 99)
                         results.append(item)
+
+            # Sort by engine priority (stable sort preserves within-engine order)
+            results.sort(key=lambda x: x["_engine_priority"])
+
+            # Remove internal priority tag before returning
+            for item in results:
+                item.pop("_engine_priority", None)
 
             # 如果选择 both，限制总结果数量
             if search_engine == "both":
@@ -1108,11 +1126,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
         # SSRF 防护：在入口处即验证 URL
         if WebSearcher._validate_url(url) is None:
-            return [
-                TextContent(
-                    type="text", text="错误：URL 不安全，仅允许公网 HTTP(S) 地址"
-                )
-            ]
+            return [TextContent(type="text", text="错误：URL 不安全，仅允许公网 HTTP(S) 地址")]
 
         async with WebSearcher() as searcher:
             content = await searcher.get_page_content(url)
@@ -1128,22 +1142,33 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
 
 async def main():
-    # 运行服务器使用stdio传输
-    from mcp.server.stdio import stdio_server
+    global _shared_session
+    try:
+        # Pre-create the shared session so it's ready when the first tool call arrives
+        _shared_session = await _get_shared_session()
+        logger.info("Shared aiohttp session created")
 
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="web-search-server",
-                server_version=__version__,
-                capabilities=server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={},
+        # 运行服务器使用stdio传输
+        from mcp.server.stdio import stdio_server
+
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream,
+                write_stream,
+                InitializationOptions(
+                    server_name="web-search-server",
+                    server_version=__version__,
+                    capabilities=server.get_capabilities(
+                        notification_options=NotificationOptions(),
+                        experimental_capabilities={},
+                    ),
                 ),
-            ),
-        )
+            )
+    finally:
+        if _shared_session and not _shared_session.closed:
+            await _shared_session.close()
+            _shared_session = None
+            logger.info("Shared aiohttp session closed")
 
 
 if __name__ == "__main__":
