@@ -1059,7 +1059,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             # 合并结果并去重（按引擎优先级排序）
             seen_urls: set[str] = set()
             results: list[dict] = []
-            for engine, r in zip(engines, results_list):
+            for engine, r in zip(engines, results_list, strict=True):
                 for item in r:
                     url = item.get("url", "")
                     if url and url not in seen_urls:
