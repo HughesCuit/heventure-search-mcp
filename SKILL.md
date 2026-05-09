@@ -3,9 +3,28 @@ name: heventure-search-mcp
 description: >
   Use when: agent needs web search (multi-engine: DuckDuckGo/Bing/Google, free, no API key). Install: pip install heventure-search-mcp
 ---
+
 # heventure-search-mcp
 
 A free MCP (Model Context Protocol) web search server with no API key required for core search.
+
+## ⚡ Environment Variables
+
+Set these **before** starting the server to enable paid search engines:
+
+| Variable | Required By | Free Tier | Get Key |
+|----------|-------------|-----------|---------|
+| `SERPAPI_KEY` | `serpapi` engine | 100 req/month | [serpapi.com](https://serpapi.com) |
+| `TAVILY_API_KEY` | `tavily` engine | 1000 req/month | [tavily.com](https://tavily.com) |
+
+> **Note:** Free engines (DuckDuckGo, Bing, Google) work without any API key.
+> Without these env vars, `serpapi`/`tavily` engines will silently fail.
+
+Example:
+```bash
+export SERPAPI_KEY="your_key"
+export TAVILY_API_KEY="your_key"
+```
 
 ## TRIGGER when...
 
@@ -23,7 +42,6 @@ Load this MCP server when **any** of the following conditions apply:
 - The user wants to configure or deploy Firecrawl (use `firecrawl-self-hosted` skill instead)
 - The user is asking about search engine internals or API implementation details (not usage)
 
-## Quick Start
 ## Quick Start
 
 ### Run via uvx (recommended)
@@ -84,7 +102,7 @@ Search the web with multiple engines.
 |-----------|------|----------|---------|-------------|
 | `query` | string | yes | — | Search query |
 | `max_results` | integer | no | 10 | Max results (1–20) |
-| `search_engine` | string | no | `"both"` | Engine: `"duckduckgo"`, `"bing"`, `"google"`, `"serpapi"`, `"tavily"`, or `"both"` (see below) |
+| `search_engine` | string | no | `"both"` | Engine: `"duckduckgo"` / `"bing"` / `"google"` (free) / `"serpapi"` (needs SERPAPI_KEY) / `"tavily"` (needs TAVILY_API_KEY) / `"both"` (free engines only) |
 
 #### `search_engine="both"` behavior
 
@@ -105,17 +123,6 @@ Fetch text content from a URL.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `url` | string | yes | Target webpage URL |
-
-## Optional API Keys
-
-Set these environment variables to enable paid search engines for higher quality results:
-
-```bash
-export SERPAPI_KEY="your_key"    # Google results via API, 100 free/month
-export TAVILY_API_KEY="your_key" # AI-optimized search, 1000 free/month
-```
-
-When configured, paid engines run alongside free engines automatically.
 
 ## Search Engines
 
