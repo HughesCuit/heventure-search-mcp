@@ -1021,6 +1021,7 @@ class WebSearcher:
         try:
             if not SERPAPI_KEY:
                 logger.warning("SerpAPI Key 未配置")
+                self._engine_status["serpapi"] = "error (no API key)"
                 return []
 
             url = "https://serpapi.com/search"
@@ -1052,15 +1053,19 @@ class WebSearcher:
 
                     logger.info(f"SerpAPI 返回 {len(results)} 条结果")
                     self._set_to_cache(cache_key, results)
+                    self._engine_status["serpapi"] = f"{len(results)} results"
                     return results
                 elif response.status == 403:
                     logger.error("SerpAPI API Key 无效或配额用尽")
+                    self._engine_status["serpapi"] = "error (HTTP 403)"
                     return []
                 else:
                     logger.error(f"SerpAPI 请求失败: {response.status}")
+                    self._engine_status["serpapi"] = f"error (HTTP {response.status})"
                     return []
         except Exception as e:
             logger.error(f"SerpAPI 搜索错误: {e}")
+            self._engine_status["serpapi"] = f"error ({type(e).__name__})"
             return []
 
     async def search_tavily(self, query: str, max_results: int = 10) -> list:
@@ -1076,6 +1081,7 @@ class WebSearcher:
         try:
             if not TAVILY_API_KEY:
                 logger.warning("Tavily API Key 未配置")
+                self._engine_status["tavily"] = "error (no API key)"
                 return []
 
             url = "https://api.tavily.com/search"
@@ -1112,15 +1118,19 @@ class WebSearcher:
 
                     logger.info(f"Tavily 返回 {len(results)} 条结果")
                     self._set_to_cache(cache_key, results)
+                    self._engine_status["tavily"] = f"{len(results)} results"
                     return results
                 elif response.status == 401:
                     logger.error("Tavily API Key 无效")
+                    self._engine_status["tavily"] = "error (HTTP 401)"
                     return []
                 else:
                     logger.error(f"Tavily 请求失败: {response.status}")
+                    self._engine_status["tavily"] = f"error (HTTP {response.status})"
                     return []
         except Exception as e:
             logger.error(f"Tavily 搜索错误: {e}")
+            self._engine_status["tavily"] = f"error ({type(e).__name__})"
             return []
 
     async def get_page_content(self, url: str) -> str:
@@ -1233,26 +1243,35 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
         async with WebSearcher() as searcher:
             # 并发执行多个搜索引擎搜索
-            async def search_with_fallback(engine: str):
-                """单个搜索引擎搜索，带备用方法"""
+            async def search_with_fallback(engine: str) -> tuple[list[dict], str]:
+                """单个搜索引擎搜索，带备用方法。返回 (results, status_str)"""
                 _start = time.monotonic()
-                if engine == "duckduckgo":
-                    # search_duckduckgo() 内部已有三层回退到 HTML，
-                    # 无需在外层重复调用 search_html_duckduckgo()
-                    results = await searcher.search_duckduckgo(query, max_results)
-                elif engine == "bing":
-                    results = await searcher.search_bing(query, max_results)
-                elif engine == "google":
-                    results = await searcher.search_google(query, max_results)
-                elif engine == "serpapi":
-                    results = await searcher.search_serpapi(query, max_results)
-                elif engine == "tavily":
-                    results = await searcher.search_tavily(query, max_results)
-                else:
-                    results = []
-                _elapsed = time.monotonic() - _start
-                logger.info(f"{engine}: {len(results)} results in {_elapsed:.2f}s")
-                return results
+                try:
+                    if engine == "duckduckgo":
+                        # search_duckduckgo() 内部已有三层回退到 HTML，
+                        # 无需在外层重复调用 search_html_duckduckgo()
+                        results = await searcher.search_duckduckgo(query, max_results)
+                    elif engine == "bing":
+                        results = await searcher.search_bing(query, max_results)
+                    elif engine == "google":
+                        results = await searcher.search_google(query, max_results)
+                    elif engine == "serpapi":
+                        results = await searcher.search_serpapi(query, max_results)
+                    elif engine == "tavily":
+                        results = await searcher.search_tavily(query, max_results)
+                    else:
+                        results = []
+                    _elapsed = time.monotonic() - _start
+                    logger.info(f"{engine}: {len(results)} results in {_elapsed:.2f}s")
+                    # Get status from searcher (set by search methods) or build from results
+                    engine_status = searcher._engine_status.get(engine)
+                    if not engine_status:
+                        engine_status = f"{len(results)} results"
+                    return results, engine_status
+                except Exception as e:
+                    _elapsed = time.monotonic() - _start
+                    logger.error(f"{engine}: error in {_elapsed:.2f}s — {e}")
+                    return [], f"error ({type(e).__name__})"
 
             # 根据选择的搜索引擎构建任务列表
             # 优先级：免费引擎 -> API Key 增强引擎
@@ -1277,10 +1296,16 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             tasks = [search_with_fallback(e) for e in engines]
             results_list = await asyncio.gather(*tasks)
 
+            # Track per-engine status for the summary
+            engine_stats: list[str] = []
+
             # 合并结果并去重（按引擎优先级排序）
             seen_urls: set[str] = set()
             results: list[dict] = []
-            for engine, r in zip(engines, results_list, strict=True):
+            for engine, (r, status) in zip(engines, results_list, strict=True):
+                engine_stats.append(
+                    f"{ENGINE_DISPLAY_NAMES.get(engine, engine)}: {status}"
+                )
                 for item in r:
                     url = item.get("url", "")
                     if url and url not in seen_urls:
@@ -1349,6 +1374,11 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 f"搜索查询: {query}\n搜索引擎: {engine_desc}\n\n"
                 + "\n".join(formatted_results)
             )
+
+            # Append engine status summary for "both" mode
+            if search_engine == "both" and engine_stats:
+                response_text += "\n---\n各引擎状态:\n" + "\n".join(engine_stats) + "\n"
+
             return [TextContent(type="text", text=response_text)]
 
     elif name == "get_webpage_content":
