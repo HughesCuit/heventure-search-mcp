@@ -35,6 +35,15 @@ ENGINE_PRIORITY: dict[str, int] = {
     "tavily": 0,
 }
 
+# 引擎显示名称（用于状态摘要）
+ENGINE_DISPLAY_NAMES: dict[str, str] = {
+    "duckduckgo": "DuckDuckGo",
+    "bing": "Bing",
+    "google": "Google",
+    "serpapi": "SerpAPI",
+    "tavily": "Tavily",
+}
+
 try:
     __version__ = importlib.metadata.version("heventure-search-mcp")
 except importlib.metadata.PackageNotFoundError:
@@ -136,6 +145,8 @@ class WebSearcher:
     def __init__(self):
         self.session = None
         self.headers = self.DEFAULT_HEADERS.copy()
+        self._blocked_engines: dict[str, str] = {}
+        self._engine_status: dict[str, str] = {}
 
     @staticmethod
     def _normalize_query(query: str) -> str:
@@ -519,6 +530,9 @@ class WebSearcher:
                                     query, max_results
                                 )
                                 self._set_to_cache(cache_key, results)
+                                self._engine_status["duckduckgo"] = (
+                                    f"{len(results)} results"
+                                )
                                 return results
                         else:
                             logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
@@ -526,6 +540,9 @@ class WebSearcher:
                                 query, max_results
                             )
                             self._set_to_cache(cache_key, results)
+                            self._engine_status["duckduckgo"] = (
+                                f"{len(results)} results"
+                            )
                             return results
 
                     results = []
@@ -588,9 +605,11 @@ class WebSearcher:
                     if not results:
                         results = await self.search_html_duckduckgo(query, max_results)
                         self._set_to_cache(cache_key, results)
+                        self._engine_status["duckduckgo"] = f"{len(results)} results"
                         return results
 
                     self._set_to_cache(cache_key, results)
+                    self._engine_status["duckduckgo"] = f"{len(results)} results"
                     return results
                 else:
                     logger.warning(
@@ -598,9 +617,11 @@ class WebSearcher:
                     )
                     results = await self.search_html_duckduckgo(query, max_results)
                     self._set_to_cache(cache_key, results)
+                    self._engine_status["duckduckgo"] = f"{len(results)} results"
                     return results
         except Exception as e:
             logger.error(f"DuckDuckGo搜索错误: {e}")
+            self._engine_status["duckduckgo"] = f"error ({type(e).__name__})"
             return []
 
     @staticmethod
@@ -664,14 +685,19 @@ class WebSearcher:
                                 }
                             )
 
+                    self._engine_status["duckduckgo"] = f"{len(results)} results"
                     return results
                 else:
                     logger.warning(
                         f"DuckDuckGo HTML 返回非预期状态码: {response.status}"
                     )
+                    self._engine_status["duckduckgo"] = (
+                        f"error (HTTP {response.status})"
+                    )
                     return []
         except Exception as e:
             logger.error(f"DuckDuckGo HTML搜索错误: {e}")
+            self._engine_status["duckduckgo"] = f"error ({type(e).__name__})"
             return []
 
     async def search_bing(self, query: str, max_results: int = 10) -> list:
@@ -706,11 +732,13 @@ class WebSearcher:
                 )
 
             if response is None:
+                self._engine_status["bing"] = "error (no response)"
                 return []
 
             # 只有在状态码为 200 时才读取响应体
             if response.status != 200:
                 logger.warning(f"必应返回非200状态码: {response.status}")
+                self._engine_status["bing"] = f"error (HTTP {response.status})"
                 return []
 
             html = response.text
@@ -723,6 +751,10 @@ class WebSearcher:
                 or "captcha" in html_lower
             ):
                 logger.warning("Bing返回了验证码挑战页面，无法获取搜索结果")
+                self._blocked_engines["bing"] = (
+                    "Bing 返回验证码页面，无法获取搜索结果。建议改用 DuckDuckGo 或配置 SerpAPI/Tavily"
+                )
+                self._engine_status["bing"] = "blocked (challenge)"
                 return []
 
             soup = BeautifulSoup(html, "html.parser")
@@ -818,9 +850,11 @@ class WebSearcher:
                 )
 
             self._set_to_cache(cache_key, results)
+            self._engine_status["bing"] = f"{len(results)} results"
             return results
         except Exception as e:
             logger.error(f"必应搜索错误: {e}")
+            self._engine_status["bing"] = f"error ({type(e).__name__})"
             return []
 
     async def search_google(self, query: str, max_results: int = 10) -> list:
@@ -867,9 +901,23 @@ class WebSearcher:
                     # 检测阻止
                     if not html or len(html) < 500:
                         logger.warning("Google 返回了空白或过短的页面，跳过")
+                        self._engine_status["google"] = "blocked (empty page)"
                         continue
                     if "captcha" in html.lower():
                         logger.warning("Google 返回了验证码页面，跳过")
+                        self._blocked_engines["google"] = (
+                            "Google 搜索被拦截(验证码/rate limit)。建议改用 DuckDuckGo 或配置 SerpAPI/Tavily"
+                        )
+                        self._engine_status["google"] = "blocked (captcha)"
+                        continue
+
+                    html_lower = html.lower()
+                    if "sorry" in html_lower or "unusual traffic" in html_lower:
+                        self._blocked_engines["google"] = (
+                            "Google 搜索被拦截(验证码/rate limit)。建议改用 DuckDuckGo 或配置 SerpAPI/Tavily"
+                        )
+                        self._engine_status["google"] = "blocked (captcha)"
+                        logger.warning("Google 返回了 sorry/rate-limit 页面，跳过")
                         continue
 
                     soup = BeautifulSoup(html, "html.parser")
@@ -943,6 +991,7 @@ class WebSearcher:
                     if results:
                         logger.info(f"Google 搜索返回 {len(results)} 条结果")
                         self._set_to_cache(cache_key, results)
+                        self._engine_status["google"] = f"{len(results)} results"
                         return results
                     else:
                         logger.info("Google 搜索返回 0 条结果")
@@ -951,10 +1000,12 @@ class WebSearcher:
                     logger.warning(f"Google 搜索 URL ({url}) 失败: {e}")
                     continue
 
+            self._engine_status["google"] = "error (all domains failed)"
             return []
 
         except Exception as e:
             logger.error(f"Google 搜索错误: {e}")
+            self._engine_status["google"] = f"error ({type(e).__name__})"
             return []
 
     async def search_serpapi(self, query: str, max_results: int = 10) -> list:
@@ -1250,6 +1301,11 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 results = results[:max_results]
 
             if not results:
+                if searcher._blocked_engines:
+                    messages = [
+                        f"⚠️ {msg}" for engine, msg in searcher._blocked_engines.items()
+                    ]
+                    return [TextContent(type="text", text="\n\n".join(messages))]
                 return [TextContent(type="text", text="未找到相关搜索结果")]
 
             # 格式化结果
@@ -1281,6 +1337,13 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             engine_desc = search_engines_used.get(search_engine, "DuckDuckGo")
             if active_engines:
                 engine_desc += " + " + " + ".join(active_engines)
+
+            # Warn about blocked engines
+            if searcher._blocked_engines:
+                warnings = [
+                    f"⚠️ {msg}" for engine, msg in searcher._blocked_engines.items()
+                ]
+                formatted_results.append("\n---\n" + "\n".join(warnings))
 
             response_text = (
                 f"搜索查询: {query}\n搜索引擎: {engine_desc}\n\n"

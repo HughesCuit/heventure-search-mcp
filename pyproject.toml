@@ -55,6 +55,7 @@ include-package-data = true
 "*" = ["*.md", "*.txt", "*.json", "*.sh"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 markers = [
     "integration: 集成测试，需要真实网络访问",
 ]

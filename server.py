@@ -133,6 +133,7 @@ class WebSearcher:
     def __init__(self):
         self.session = None
         self.headers = self.DEFAULT_HEADERS.copy()
+        self._blocked_engines: dict[str, str] = {}
 
     @staticmethod
     def _normalize_query(query: str) -> str:
@@ -601,6 +602,9 @@ class WebSearcher:
                 or "captcha" in html_lower
             ):
                 logger.warning("Bing返回了验证码挑战页面，无法获取搜索结果")
+                self._blocked_engines["bing"] = (
+                    "Bing 返回验证码页面，无法获取搜索结果。建议改用 DuckDuckGo 或配置 SerpAPI/Tavily"
+                )
                 return []
 
             soup = BeautifulSoup(html, "html.parser")
@@ -748,6 +752,17 @@ class WebSearcher:
                         continue
                     if "captcha" in html.lower():
                         logger.warning("Google 返回了验证码页面，跳过")
+                        self._blocked_engines["google"] = (
+                            "Google 搜索被拦截(验证码/rate limit)。建议改用 DuckDuckGo 或配置 SerpAPI/Tavily"
+                        )
+                        continue
+
+                    html_lower = html.lower()
+                    if "sorry" in html_lower or "unusual traffic" in html_lower:
+                        self._blocked_engines["google"] = (
+                            "Google 搜索被拦截(验证码/rate limit)。建议改用 DuckDuckGo 或配置 SerpAPI/Tavily"
+                        )
+                        logger.warning("Google 返回了 sorry/rate-limit 页面，跳过")
                         continue
 
                     soup = BeautifulSoup(html, "html.parser")
@@ -1125,6 +1140,11 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
                 results = results[:max_results]
 
             if not results:
+                if searcher._blocked_engines:
+                    messages = [
+                        f"⚠️ {msg}" for engine, msg in searcher._blocked_engines.items()
+                    ]
+                    return [TextContent(type="text", text="\n\n".join(messages))]
                 return [TextContent(type="text", text="未找到相关搜索结果")]
 
             # 格式化结果
@@ -1156,6 +1176,13 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
             engine_desc = search_engines_used.get(search_engine, "DuckDuckGo")
             if active_engines:
                 engine_desc += " + " + " + ".join(active_engines)
+
+            # Warn about blocked engines
+            if searcher._blocked_engines:
+                warnings = [
+                    f"⚠️ {msg}" for engine, msg in searcher._blocked_engines.items()
+                ]
+                formatted_results.append("\n---\n" + "\n".join(warnings))
 
             response_text = (
                 f"搜索查询: {query}\n搜索引擎: {engine_desc}\n\n"
