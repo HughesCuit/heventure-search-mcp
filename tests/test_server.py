@@ -3,29 +3,13 @@
 """
 
 import json
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
 
-# 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# 直接导入 server 模块
-import importlib.util
-
-spec = importlib.util.spec_from_file_location(
-    "server",
-    os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server.py"
-    ),
-)
-server = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(server)
-
-WebSearcher = server.WebSearcher
+from heventure_search_mcp import server
+from heventure_search_mcp.server import WebSearcher
 
 
 class TestWebSearcher:
@@ -270,7 +254,14 @@ class TestWebSearcher:
     @pytest.mark.asyncio
     async def test_search_duckduckgo_html_fallback_cached(self, searcher):
         """HTML fallback results should be cached for subsequent calls."""
-        mock_results = [{"title": "cached test", "url": "https://test.dev/page", "snippet": "test snippet", "type": "html"}]
+        mock_results = [
+            {
+                "title": "cached test",
+                "url": "https://test.dev/page",
+                "snippet": "test snippet",
+                "type": "html",
+            }
+        ]
 
         mock_response = AsyncMock()
         mock_response.status = 500
@@ -281,7 +272,12 @@ class TestWebSearcher:
         mock_session.get = MagicMock(return_value=mock_response)
         searcher.session = mock_session
 
-        with patch.object(searcher, "search_html_duckduckgo", new_callable=AsyncMock, return_value=mock_results) as mock_html:
+        with patch.object(
+            searcher,
+            "search_html_duckduckgo",
+            new_callable=AsyncMock,
+            return_value=mock_results,
+        ) as mock_html:
             results1 = await searcher.search_duckduckgo("test query", max_results=5)
             results2 = await searcher.search_duckduckgo("test query", max_results=5)
 
@@ -793,7 +789,10 @@ class TestCache:
 
         # 手动修改时间戳使其过期
         results_stored, old_ts = WebSearcher._search_cache[key]
-        WebSearcher._search_cache[key] = (results, old_ts - WebSearcher._cache_ttl_seconds - 1)
+        WebSearcher._search_cache[key] = (
+            results,
+            old_ts - WebSearcher._cache_ttl_seconds - 1,
+        )
 
         # 应该返回 None 并清理过期条目
         assert WebSearcher._get_from_cache(key) is None
@@ -834,14 +833,24 @@ class TestCache:
         assert WebSearcher._normalize_query("Hello World") == "hello world"
         assert WebSearcher._normalize_query("  spaces  ") == "spaces"
         assert WebSearcher._normalize_query("multiple   spaces") == "multiple spaces"
-        assert WebSearcher._normalize_query("Mixed CASE  With   Spaces") == "mixed case with spaces"
+        assert (
+            WebSearcher._normalize_query("Mixed CASE  With   Spaces")
+            == "mixed case with spaces"
+        )
 
     @pytest.mark.asyncio
     async def test_cache_hit_skips_network(self):
         """测试缓存命中时不发起网络请求"""
         WebSearcher._set_to_cache(
             "duckduckgo:cached query:5",
-            [{"title": "Cached", "url": "https://cached.com", "snippet": "", "type": "cached"}],
+            [
+                {
+                    "title": "Cached",
+                    "url": "https://cached.com",
+                    "snippet": "",
+                    "type": "cached",
+                }
+            ],
         )
         async with WebSearcher() as searcher:
             results = await searcher.search_duckduckgo("cached query", max_results=5)
@@ -1259,7 +1268,9 @@ class TestHandleCallTool:
 
         async with WebSearcher() as searcher:
             results = await searcher.search_duckduckgo("empty url test", max_results=10)
-        assert len(results) == 1, f"Expected 1 result (empty URL dedup), got {len(results)}"
+        assert len(results) == 1, (
+            f"Expected 1 result (empty URL dedup), got {len(results)}"
+        )
         assert results[0]["url"] == ""
 
     @pytest.mark.asyncio
@@ -1591,14 +1602,19 @@ class TestHandleCallTool:
         monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
         monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
         monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_ddg)
-        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[])
+        )
         monkeypatch.setattr(WebSearcher, "search_google", AsyncMock(return_value=[]))
         monkeypatch.setattr(WebSearcher, "search_bing", AsyncMock(return_value=[]))
 
         await server.handle_call_tool(
-            "web_search", {"query": "test", "search_engine": "duckduckgo", "max_results": 1000}
+            "web_search",
+            {"query": "test", "search_engine": "duckduckgo", "max_results": 1000},
         )
-        assert received_max[-1] == 20, f"max_results should be clamped to 20, got {received_max[-1]}"
+        assert received_max[-1] == 20, (
+            f"max_results should be clamped to 20, got {received_max[-1]}"
+        )
 
     @pytest.mark.asyncio
     async def test_max_results_clamped_below_minimum(self, monkeypatch):
@@ -1618,14 +1634,19 @@ class TestHandleCallTool:
         monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
         monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
         monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_ddg)
-        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[])
+        )
         monkeypatch.setattr(WebSearcher, "search_google", AsyncMock(return_value=[]))
         monkeypatch.setattr(WebSearcher, "search_bing", AsyncMock(return_value=[]))
 
         await server.handle_call_tool(
-            "web_search", {"query": "test", "search_engine": "duckduckgo", "max_results": -5}
+            "web_search",
+            {"query": "test", "search_engine": "duckduckgo", "max_results": -5},
         )
-        assert received_max[-1] == 1, f"max_results should be clamped to 1, got {received_max[-1]}"
+        assert received_max[-1] == 1, (
+            f"max_results should be clamped to 1, got {received_max[-1]}"
+        )
 
     @pytest.mark.asyncio
     async def test_max_results_non_integer_handled(self, monkeypatch):
@@ -1645,15 +1666,20 @@ class TestHandleCallTool:
         monkeypatch.setattr(WebSearcher, "__aenter__", mock_init)
         monkeypatch.setattr(WebSearcher, "__aexit__", mock_close)
         monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_ddg)
-        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[])
+        )
         monkeypatch.setattr(WebSearcher, "search_google", AsyncMock(return_value=[]))
         monkeypatch.setattr(WebSearcher, "search_bing", AsyncMock(return_value=[]))
 
         # String that looks like a number
         await server.handle_call_tool(
-            "web_search", {"query": "test", "search_engine": "duckduckgo", "max_results": "15"}
+            "web_search",
+            {"query": "test", "search_engine": "duckduckgo", "max_results": "15"},
         )
-        assert received_max[-1] == 15, f"String '15' should be coerced to int 15, got {received_max[-1]}"
+        assert received_max[-1] == 15, (
+            f"String '15' should be coerced to int 15, got {received_max[-1]}"
+        )
 
     @pytest.mark.asyncio
     async def test_max_results_non_numeric_string_defaults(self, monkeypatch):
@@ -1665,14 +1691,19 @@ class TestHandleCallTool:
             return []
 
         monkeypatch.setattr(WebSearcher, "search_duckduckgo", mock_search)
-        monkeypatch.setattr(WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            WebSearcher, "search_html_duckduckgo", AsyncMock(return_value=[])
+        )
         monkeypatch.setattr(WebSearcher, "search_google", AsyncMock(return_value=[]))
         monkeypatch.setattr(WebSearcher, "search_bing", AsyncMock(return_value=[]))
 
         await server.handle_call_tool(
-            "web_search", {"query": "test", "search_engine": "duckduckgo", "max_results": "abc"}
+            "web_search",
+            {"query": "test", "search_engine": "duckduckgo", "max_results": "abc"},
         )
-        assert received_max[-1] == 10, f"Non-numeric 'abc' should default to 10, got {received_max[-1]}"
+        assert received_max[-1] == 10, (
+            f"Non-numeric 'abc' should default to 10, got {received_max[-1]}"
+        )
 
 
 class TestSSRFValidation:
@@ -1700,7 +1731,10 @@ class TestSSRFValidation:
 
     def test_validate_url_rejects_data_scheme(self):
         """data: 协议应被拒绝"""
-        assert WebSearcher._validate_url("data:text/html,<script>alert(1)</script>") is None
+        assert (
+            WebSearcher._validate_url("data:text/html,<script>alert(1)</script>")
+            is None
+        )
 
     def test_validate_url_rejects_javascript_scheme(self):
         """javascript: 协议应被拒绝"""
@@ -1741,8 +1775,13 @@ class TestSSRFValidation:
 
     def test_validate_url_rejects_cloud_metadata(self):
         """AWS/GCP/Azure 元数据端点应被拒绝"""
-        assert WebSearcher._validate_url("http://169.254.169.254/latest/meta-data/") is None
-        assert WebSearcher._validate_url("http://169.254.169.254/latest/user-data") is None
+        assert (
+            WebSearcher._validate_url("http://169.254.169.254/latest/meta-data/")
+            is None
+        )
+        assert (
+            WebSearcher._validate_url("http://169.254.169.254/latest/user-data") is None
+        )
 
     def test_validate_url_rejects_unspecified(self):
         """0.0.0.0 未指定地址应被拒绝"""
@@ -1776,7 +1815,9 @@ class TestSSRFValidation:
 
     def test_validate_url_allows_ipv6_public(self):
         """公网 IPv6 应通过验证"""
-        assert WebSearcher._validate_url("http://[2606:4700::1]") is not None  # Cloudflare IPv6
+        assert (
+            WebSearcher._validate_url("http://[2606:4700::1]") is not None
+        )  # Cloudflare IPv6
 
     @pytest.mark.asyncio
     async def test_get_webpage_content_rejects_ssrf(self, monkeypatch):
@@ -1886,7 +1927,9 @@ class TestSSRFRedirectBypass:
         """_safe_get 应阻止重定向到私有 IP（如 169.254.169.254）"""
         redirect_response = AsyncMock()
         redirect_response.status = 302
-        redirect_response.headers = {"Location": "http://169.254.169.254/latest/meta-data/"}
+        redirect_response.headers = {
+            "Location": "http://169.254.169.254/latest/meta-data/"
+        }
 
         mock_cm = MagicMock()
         mock_cm.__aenter__ = AsyncMock(return_value=redirect_response)
@@ -1920,12 +1963,16 @@ class TestSSRFRedirectBypass:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_safe_get_blocks_redirect_to_resolved_private_hostname(self, searcher):
+    async def test_safe_get_blocks_redirect_to_resolved_private_hostname(
+        self, searcher
+    ):
         """_safe_get 应阻止重定向到解析为私有 IP 的主机名"""
 
         redirect_response = AsyncMock()
         redirect_response.status = 302
-        redirect_response.headers = {"Location": "http://metadata.google.internal/latest/meta-data/"}
+        redirect_response.headers = {
+            "Location": "http://metadata.google.internal/latest/meta-data/"
+        }
 
         mock_cm = MagicMock()
         mock_cm.__aenter__ = AsyncMock(return_value=redirect_response)
@@ -2040,3 +2087,80 @@ class TestSafeGetDNSRebinding:
         assert WebSearcher._validate_url("https://evil.example.com") is not None
         # 但已知私有 IP 应被拒绝
         assert WebSearcher._validate_url("http://127.0.0.1") is None
+
+
+class TestBothModePriority:
+    """Test that 'both' mode results are ordered by engine priority."""
+
+    @pytest.fixture
+    def searcher(self):
+        WebSearcher.clear_cache()
+        return WebSearcher()
+
+    @pytest.mark.asyncio
+    async def test_both_mode_results_ordered_by_engine_priority(self, searcher):
+        """Google results should come before Bing, which should come before DuckDuckGo."""
+        google_results = [
+            {"title": "Google 1", "url": "https://google.com/1", "snippet": "gs1", "type": "google_result"},
+            {"title": "Google 2", "url": "https://google.com/2", "snippet": "gs2", "type": "google_result"},
+        ]
+        bing_results = [
+            {"title": "Bing 1", "url": "https://bing.com/1", "snippet": "bs1", "type": "bing_result"},
+            {"title": "Bing 2", "url": "https://bing.com/2", "snippet": "bs2", "type": "bing_result"},
+        ]
+        ddg_results = [
+            {"title": "DDG 1", "url": "https://ddg.com/1", "snippet": "ds1", "type": "related_topic"},
+            {"title": "DDG 2", "url": "https://ddg.com/2", "snippet": "ds2", "type": "related_topic"},
+        ]
+
+        with (
+            patch.object(WebSearcher, "search_google", new_callable=AsyncMock, return_value=google_results),
+            patch.object(WebSearcher, "search_bing", new_callable=AsyncMock, return_value=bing_results),
+            patch.object(WebSearcher, "search_duckduckgo", new_callable=AsyncMock, return_value=ddg_results),
+        ):
+            response = await server.handle_call_tool(
+                "web_search",
+                {"query": "test", "search_engine": "both", "max_results": 20},
+            )
+
+        text = response[0].text
+        # Verify order: google results should appear before bing, bing before ddg
+        google_pos = text.find("Google 1")
+        bing_pos = text.find("Bing 1")
+        ddg_pos = text.find("DDG 1")
+        assert google_pos < bing_pos < ddg_pos, (
+            f"Expected google < bing < ddg order, got positions: google={google_pos}, bing={bing_pos}, ddg={ddg_pos}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_both_mode_dedup_preserves_priority(self, searcher):
+        """When same URL appears in multiple engines, the first occurrence (by engine list order) wins."""
+        google_results = [
+            {"title": "Google Shared", "url": "https://shared.com/page", "snippet": "from google", "type": "google_result"},
+        ]
+        bing_results = [
+            {"title": "Bing Shared", "url": "https://shared.com/page", "snippet": "from bing", "type": "bing_result"},
+            {"title": "Bing Only", "url": "https://bing.com/only", "snippet": "bing only", "type": "bing_result"},
+        ]
+        ddg_results = [
+            {"title": "DDG Shared", "url": "https://shared.com/page", "snippet": "from ddg", "type": "related_topic"},
+        ]
+
+        with (
+            patch.object(WebSearcher, "search_google", new_callable=AsyncMock, return_value=google_results),
+            patch.object(WebSearcher, "search_bing", new_callable=AsyncMock, return_value=bing_results),
+            patch.object(WebSearcher, "search_duckduckgo", new_callable=AsyncMock, return_value=ddg_results),
+        ):
+            response = await server.handle_call_tool(
+                "web_search",
+                {"query": "test", "search_engine": "both", "max_results": 20},
+            )
+
+        text = response[0].text
+        # Shared URL should show Google's version (first in engines list)
+        assert "from google" in text
+        assert text.count("shared.com/page") == 1  # deduped
+        # Bing-only result should appear after Google results
+        google_pos = text.find("Google Shared")
+        bing_pos = text.find("Bing Only")
+        assert google_pos < bing_pos

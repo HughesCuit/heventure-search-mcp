@@ -45,10 +45,10 @@ Issues = "https://github.com/HughesCuit/heventure-search-mcp/issues"
 Documentation = "https://github.com/HughesCuit/heventure-search-mcp#readme"
 
 [project.scripts]
-heventure-search-mcp = "server:entry_point"
+heventure-search-mcp = "heventure_search_mcp.server:entry_point"
 
 [tool.setuptools]
-py-modules = ["server"]
+packages = ["heventure_search_mcp"]
 include-package-data = true
 
 [tool.setuptools.package-data]
