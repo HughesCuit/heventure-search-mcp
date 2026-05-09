@@ -17,15 +17,6 @@ from urllib.parse import parse_qs, quote_plus, urlencode, urlparse
 
 import aiohttp
 from bs4 import BeautifulSoup
-
-# Ensure brotli is available for aiohttp to handle br encoding
-try:
-    import brotli  # noqa: F401
-
-    logging.getLogger("web-search-server").debug("brotli loaded successfully")
-except ImportError:
-    pass
-
 from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 from mcp.types import (
@@ -216,7 +207,13 @@ class WebSearcher:
         """检查主机名解析后的 IP 是否为私有/保留地址（用于重定向后的二次检查）"""
         try:
             ip = ipaddress.ip_address(hostname)
-            return ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_private or ip.is_unspecified
+            return (
+                ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_private
+                or ip.is_unspecified
+            )
         except ValueError:
             # hostname is a domain name, resolve it to IPs
             try:
@@ -226,7 +223,13 @@ class WebSearcher:
                 return True  # DNS failure → treat as private
             for _, _, _, _, sockaddr in addrinfos:
                 ip = ipaddress.ip_address(sockaddr[0])
-                if ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_private or ip.is_unspecified:
+                if (
+                    ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_reserved
+                    or ip.is_private
+                    or ip.is_unspecified
+                ):
                     return True
             return False
 
@@ -378,7 +381,9 @@ class WebSearcher:
                                 return results
                         else:
                             logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
-                            results = await self.search_html_duckduckgo(query, max_results)
+                            results = await self.search_html_duckduckgo(
+                                query, max_results
+                            )
                             self._set_to_cache(cache_key, results)
                             return results
 
@@ -574,8 +579,8 @@ class WebSearcher:
             # 备用: 任何包含 h2 和 a 标签的 li
             if not result_items:
                 for li in soup.find_all("li"):
-                    h2_elem = li.find('h2')
-                    if h2_elem and h2_elem.find('a'):
+                    h2_elem = li.find("h2")
+                    if h2_elem and h2_elem.find("a"):
                         result_items.append(li)
                         if len(result_items) >= max_results * 2:
                             break
@@ -955,7 +960,14 @@ async def handle_list_tools() -> list[Tool]:
                     "search_engine": {
                         "type": "string",
                         "description": "搜索引擎选择：duckduckgo / bing / google / serpapi / tavily / both",
-                        "enum": ["duckduckgo", "bing", "google", "serpapi", "tavily", "both"],
+                        "enum": [
+                            "duckduckgo",
+                            "bing",
+                            "google",
+                            "serpapi",
+                            "tavily",
+                            "both",
+                        ],
                         "default": "both",
                     },
                 },
@@ -1096,7 +1108,11 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
         # SSRF 防护：在入口处即验证 URL
         if WebSearcher._validate_url(url) is None:
-            return [TextContent(type="text", text="错误：URL 不安全，仅允许公网 HTTP(S) 地址")]
+            return [
+                TextContent(
+                    type="text", text="错误：URL 不安全，仅允许公网 HTTP(S) 地址"
+                )
+            ]
 
         async with WebSearcher() as searcher:
             content = await searcher.get_page_content(url)
