@@ -6,7 +6,7 @@
     "url": "https://github.com/HughesCuit/heventure-search-mcp",
     "source": "github"
   },
-  "version": "1.5.2",
+  "version": "1.5.3",
   "packages": [
     {
       "registryType": "pypi",
