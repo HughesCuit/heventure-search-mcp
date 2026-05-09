@@ -1,6 +1,6 @@
 name: Publish to PyPI
 
-# 当代码更新时自动发布到PyPI并更新版本号
+# push to main 时自动 bump patch 版本并发布
 
 permissions:
   contents: write
@@ -10,12 +10,9 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'server.py'
+      - 'heventure_search_mcp/**'
       - 'pyproject.toml'
-      - 'setup.py'
-      - '__init__.py'
-      - '*.py'
-  # 手动触发
+      - 'server.json'
   workflow_dispatch:
     inputs:
       version_type:
@@ -27,14 +24,8 @@ on:
           - patch
           - minor
           - major
-      skip_tests:
-        description: 'Skip tests and publish directly'
-        required: false
-        default: false
-        type: boolean
 
 jobs:
-  # 版本检查和更新
   version-check:
     runs-on: ubuntu-latest
     outputs:
@@ -45,268 +36,137 @@ jobs:
       with:
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
-    
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
-    
+        python-version: '3.12'
+
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install packaging requests
-    
+      run: python -m pip install --upgrade pip packaging requests
+
     - name: Check and update version
       id: version-check
       run: |
-        python << 'EOF'
-        import re
-        import subprocess
-        import sys
+        python << 'PYEOF'
+        import re, os, json
         from packaging import version
         import requests
-        import os
-        
+
         def get_current_version():
-            with open('pyproject.toml', 'r') as f:
-                content = f.read()
-            match = re.search(r'version = "([^"]+)"', content)
-            return match.group(1) if match else None
-        
+            with open('pyproject.toml') as f:
+                m = re.search(r'version = "([^"]+")', f.read())
+            return m.group(1) if m else None
+
         def get_pypi_version():
             try:
-                response = requests.get('https://pypi.org/pypi/heventure-search-mcp/json')
-                if response.status_code == 200:
-                    return response.json()['info']['version']
+                r = requests.get('https://pypi.org/pypi/heventure-search-mcp/json', timeout=10)
+                if r.status_code == 200:
+                    return r.json()['info']['version']
             except:
                 pass
             return None
-        
-        def bump_version(current_ver, bump_type):
-            v = version.parse(current_ver)
-            if bump_type == 'major':
-                return f"{v.major + 1}.0.0"
-            elif bump_type == 'minor':
-                return f"{v.major}.{v.minor + 1}.0"
-            else:  # patch
-                return f"{v.major}.{v.minor}.{v.micro + 1}"
-        
-        def update_version_in_files(new_ver):
-            # 更新 pyproject.toml
-            with open('pyproject.toml', 'r') as f:
-                content = f.read()
-            content = re.sub(r'^version = "[^"]+"', f'version = "{new_ver}"', content, count=1, flags=re.MULTILINE)
+
+        def bump_version(cur, bump_type):
+            v = version.parse(cur)
+            if bump_type == 'major': return f"{v.major+1}.0.0"
+            elif bump_type == 'minor': return f"{v.major}.{v.minor+1}.0"
+            else: return f"{v.major}.{v.minor}.{v.micro+1}"
+
+        def update_version_files(new_ver):
+            # pyproject.toml
+            with open('pyproject.toml') as f:
+                c = f.read()
+            c = re.sub(r'^version = "[^"]+"', f'version = "{new_ver}"', c, count=1, flags=re.MULTILINE)
             with open('pyproject.toml', 'w') as f:
-                f.write(content)
-            
-            # 更新 __init__.py
-            with open('__init__.py', 'r') as f:
-                content = f.read()
-            content = re.sub(r'__version__ = "[^"]+"', f'__version__ = "{new_ver}"', content)
-            with open('__init__.py', 'w') as f:
-                f.write(content)
-        
-        current_version = get_current_version()
-        pypi_version = get_pypi_version()
-        
-        print(f"Current version: {current_version}")
-        print(f"PyPI version: {pypi_version}")
-        
-        # 确定版本更新类型
-        version_type = os.environ.get('VERSION_TYPE', 'patch')
-        if '${{ github.event.inputs.version_type }}' != '':
-            version_type = '${{ github.event.inputs.version_type }}'
-        
-        # 检查是否需要发布
+                f.write(c)
+            # server.json
+            try:
+                with open('server.json') as f:
+                    d = json.load(f)
+                d['version'] = new_ver
+                with open('server.json', 'w') as f:
+                    json.dump(d, f, indent=2, ensure_ascii=False)
+            except: pass
+
+        cur = get_current_version()
+        pypi = get_pypi_version()
+        bump_type = os.environ.get('VERSION_TYPE', 'patch')
+        if os.environ.get('INPUT_VERSION_TYPE'):
+            bump_type = os.environ['INPUT_VERSION_TYPE']
+
         should_publish = False
-        new_version = current_version
-        
-        if pypi_version is None:
-            # 首次发布
+        new_version = cur
+
+        if pypi is None:
             should_publish = True
-            print("First time publishing to PyPI")
-        elif version.parse(current_version) <= version.parse(pypi_version):
-            # 需要更新版本
-            new_version = bump_version(current_version, version_type)
-            update_version_in_files(new_version)
+            print("First time publishing")
+        elif version.parse(cur) <= version.parse(pypi):
+            new_version = bump_version(cur, bump_type)
+            update_version_files(new_ver)
             should_publish = True
-            print(f"Version bumped to: {new_version}")
+            print(f"Bumped to {new_version}")
         else:
-            # 当前版本已经比PyPI版本新
             should_publish = True
-            print(f"Current version {current_version} is newer than PyPI {pypi_version}")
-        
-        # 设置输出
+            print(f"Current {cur} > PyPI {pypi}, publishing as-is")
+
         with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
             f.write(f"should_publish={str(should_publish).lower()}\n")
             f.write(f"new_version={new_version}\n")
-        EOF
-    
+        PYEOF
+
     - name: Commit version changes
       if: steps.version-check.outputs.should_publish == 'true'
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add pyproject.toml __init__.py
+        git add pyproject.toml server.json
         if git diff --staged --quiet; then
           echo "No version changes to commit"
         else
-          git commit -m "Bump version to ${{ steps.version-check.outputs.new_version }}"
+          git commit -m "chore: bump version to ${{ steps.version-check.outputs.new_version }}"
           git push
         fi
 
-  # 构建和发布
   publish:
     needs: version-check
     if: needs.version-check.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
-    
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: main  # 确保获取最新的版本更新
-    
+        ref: main
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
-    
+        python-version: '3.12'
+
     - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build twine
-    
+      run: python -m pip install --upgrade pip build twine
+
     - name: Build package
-      run: |
-        python -m build
-    
+      run: python -m build
+
     - name: Check package
-      run: |
-        python -m twine check dist/*
-    
+      run: python -m twine check dist/*
+
     - name: Publish to PyPI
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: |
-        echo "🚀 Publishing to PyPI..."
-        python -m twine upload dist/* --verbose
-        echo "✅ Successfully published to PyPI!"
-        echo "📦 Install with: pip install heventure-search-mcp==${{ needs.version-check.outputs.new_version }}"
-    
+      run: python -m twine upload dist/*
+
     - name: Create Git Tag
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git tag v${{ needs.version-check.outputs.new_version }}
         git push origin v${{ needs.version-check.outputs.new_version }}
-        echo "🏷️ Created tag v${{ needs.version-check.outputs.new_version }}"
-    
+
     - name: Create GitHub Release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: v${{ needs.version-check.outputs.new_version }}
-        release_name: Release v${{ needs.version-check.outputs.new_version }}
-        body: |
-          ## 🚀 版本 ${{ needs.version-check.outputs.new_version }}
-          
-          ### 📦 安装方式
-          ```bash
-          pip install heventure-search-mcp==${{ needs.version-check.outputs.new_version }}
-          ```
-          
-          或使用 uvx：
-          ```bash
-          uvx heventure-search-mcp
-          ```
-          
-          ### 🔗 链接
-          - [PyPI 页面](https://pypi.org/project/heventure-search-mcp/${{ needs.version-check.outputs.new_version }}/)
-          - [GitHub 仓库](https://github.com/${{ github.repository }})
-          - [使用文档](https://github.com/${{ github.repository }}#readme)
-          
-          ### 📋 更新内容
-          此版本通过自动化流程发布，包含最新的代码更新。
-          
-          详细更新内容请查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)。
-          
-          ### 🛠️ 使用方法
-          
-          #### 作为 MCP 服务器
-          ```bash
-          heventure-search-mcp
-          ```
-          
-          #### 编程方式使用
-          ```python
-          from server import WebSearcher
-          
-          searcher = WebSearcher()
-          results = await searcher.search("Python MCP")
-          ```
-          
-          ---
-          
-          🤖 此版本由 GitHub Actions 自动发布
-        draft: false
-        prerelease: false
-    
-    - name: Update CHANGELOG
-      run: |
-        echo "📝 Updating CHANGELOG..."
-        python << 'EOF'
-        import re
-        from datetime import datetime
-        
-        version = "${{ needs.version-check.outputs.new_version }}"
-        today = datetime.now().strftime("%Y-%m-%d")
-        
-        try:
-            with open('CHANGELOG.md', 'r') as f:
-                content = f.read()
-            
-            # 在 [Unreleased] 部分后添加新版本
-            unreleased_pattern = r'(## \[Unreleased\].*?)(\n## \[)'
-            new_section = f"\n\n## [{version}] - {today}\n\n### Changed\n- 自动发布版本 {version}\n- 包含最新代码更新\n"
-            
-            if re.search(unreleased_pattern, content, re.DOTALL):
-                content = re.sub(unreleased_pattern, f"\\1{new_section}\\2", content, flags=re.DOTALL)
-            else:
-                # 如果没有找到 Unreleased 部分，在文件开头添加
-                content = f"# Changelog\n\n## [Unreleased]\n{new_section}\n" + content
-            
-            with open('CHANGELOG.md', 'w') as f:
-                f.write(content)
-            
-            print(f"✅ CHANGELOG updated with version {version}")
-        except Exception as e:
-            print(f"⚠️ Failed to update CHANGELOG: {e}")
-        EOF
-        
-        # 提交CHANGELOG更新
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add CHANGELOG.md
-        if git diff --staged --quiet; then
-          echo "No CHANGELOG changes to commit"
-        else
-          git commit -m "📝 Update CHANGELOG for version ${{ needs.version-check.outputs.new_version }}"
-          git push
-        fi
-    
-    - name: Publish Summary
-      run: |
-        echo "🎉 发布完成！"
-        echo ""
-        echo "📦 包信息:"
-        echo "  - 版本: ${{ needs.version-check.outputs.new_version }}"
-        echo "  - PyPI: https://pypi.org/project/heventure-search-mcp/${{ needs.version-check.outputs.new_version }}/"
-        echo "  - GitHub Release: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.version-check.outputs.new_version }}"
-        echo ""
-        echo "🚀 安装命令:"
-        echo "  pip install heventure-search-mcp==${{ needs.version-check.outputs.new_version }}"
-        echo "  uvx heventure-search-mcp"
-        echo ""
-        echo "✨ 自动发布流程已完成！"
+        name: Release v${{ needs.version-check.outputs.new_version }}
+        generate_release_notes: true
