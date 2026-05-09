@@ -25,6 +25,7 @@ API = "https://api.github.com"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_token() -> str:
     env_path = os.path.expanduser("~/.hermes/.env")
     if os.path.isfile(env_path):
@@ -60,20 +61,27 @@ def _request(method: str, path: str, data: dict | None = None) -> dict | list:
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
         err_body = exc.read().decode() if exc.fp else ""
-        print(json.dumps({
-            "error": f"HTTP {exc.code}",
-            "detail": err_body,
-        }))
+        print(
+            json.dumps(
+                {
+                    "error": f"HTTP {exc.code}",
+                    "detail": err_body,
+                }
+            )
+        )
         sys.exit(1)
 
 
 def _post_comment(issue_number: int, body: str) -> dict:
-    return _request("POST", f"/repos/{REPO}/issues/{issue_number}/comments", {"body": body})
+    return _request(
+        "POST", f"/repos/{REPO}/issues/{issue_number}/comments", {"body": body}
+    )
 
 
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
+
 
 def cmd_create(args: argparse.Namespace) -> None:
     """Create a GitHub Issue linked to a Kanban task."""
@@ -83,7 +91,9 @@ def cmd_create(args: argparse.Namespace) -> None:
         "body": body_text,
     }
     if args.labels:
-        payload["labels"] = [label.strip() for label in args.labels.split(",") if label.strip()]
+        payload["labels"] = [
+            label.strip() for label in args.labels.split(",") if label.strip()
+        ]
 
     result = _request("POST", f"/repos/{REPO}/issues", payload)
     print(json.dumps({"issue_number": result["number"]}))
@@ -91,7 +101,10 @@ def cmd_create(args: argparse.Namespace) -> None:
 
 def cmd_close(args: argparse.Namespace) -> None:
     """Post a summary comment and close the Issue."""
-    _post_comment(args.issue_number, f"### Kanban Task {args.kanban_id} — Completed\n\n{args.summary}")
+    _post_comment(
+        args.issue_number,
+        f"### Kanban Task {args.kanban_id} — Completed\n\n{args.summary}",
+    )
     _request("PATCH", f"/repos/{REPO}/issues/{args.issue_number}", {"state": "closed"})
     print(json.dumps({"closed": True, "issue_number": args.issue_number}))
 
@@ -128,6 +141,7 @@ def cmd_list_stale(args: argparse.Namespace) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Kanban ↔ GitHub Issue bridge")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -151,7 +165,12 @@ def main() -> None:
     p_stale.add_argument("--days", type=int, default=7)
 
     args = parser.parse_args()
-    {"create": cmd_create, "close": cmd_close, "link": cmd_link, "list-stale": cmd_list_stale}[args.command](args)
+    {
+        "create": cmd_create,
+        "close": cmd_close,
+        "link": cmd_link,
+        "list-stale": cmd_list_stale,
+    }[args.command](args)
 
 
 if __name__ == "__main__":

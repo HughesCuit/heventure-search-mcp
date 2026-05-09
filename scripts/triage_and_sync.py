@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Combined triage + sync: filter new issues, then sync triaged ones to Kanban."""
+
 import os
 import subprocess
 import sys
 
 SCRIPTS_DIR = os.path.expanduser("~/heventure-search-mcp/scripts")
+
 
 def run_script(name: str, dry_run: bool = False) -> str:
     cmd = ["python3", os.path.join(SCRIPTS_DIR, name)]
@@ -12,6 +14,7 @@ def run_script(name: str, dry_run: bool = False) -> str:
         cmd.append("--dry-run")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     return result.stdout + result.stderr
+
 
 def main():
     dry_run = "--dry-run" in sys.argv
@@ -31,6 +34,7 @@ def main():
     print("-" * 40)
     sync_output = run_script("kanban_github_sync.py", dry_run)
     print(sync_output)
+
 
 if __name__ == "__main__":
     main()

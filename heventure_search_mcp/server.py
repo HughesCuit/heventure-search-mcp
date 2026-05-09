@@ -391,7 +391,15 @@ class WebSearcher:
     class _RetryGetContextManager:
         """Async context manager that wraps session.request with retry on network errors."""
 
-        def __init__(self, session, url: str, retries: int, delay: float, kwargs: dict, method: str = "GET"):
+        def __init__(
+            self,
+            session,
+            url: str,
+            retries: int,
+            delay: float,
+            kwargs: dict,
+            method: str = "GET",
+        ):
             self._session = session
             self._url = url
             self._retries = retries
@@ -404,7 +412,9 @@ class WebSearcher:
             last_exc = None
             for attempt in range(self._retries + 1):
                 try:
-                    self._cm = getattr(self._session, self._method.lower())(self._url, **self._kwargs)
+                    self._cm = getattr(self._session, self._method.lower())(
+                        self._url, **self._kwargs
+                    )
                     return await self._cm.__aenter__()
                 except (
                     asyncio.TimeoutError,
@@ -429,7 +439,12 @@ class WebSearcher:
                 return await self._cm.__aexit__(exc_type, exc_val, exc_tb)
 
     def _request_with_retry(
-        self, url: str, retries: int = 1, delay: float = 1.0, method: str = "GET", **kwargs
+        self,
+        url: str,
+        retries: int = 1,
+        delay: float = 1.0,
+        method: str = "GET",
+        **kwargs,
     ):
         """Session request with automatic retry on timeout/connection errors.
 
@@ -443,7 +458,9 @@ class WebSearcher:
 
         Returns an async context manager that yields an aiohttp.ClientResponse.
         """
-        return self._RetryGetContextManager(self.session, url, retries, delay, kwargs, method=method)
+        return self._RetryGetContextManager(
+            self.session, url, retries, delay, kwargs, method=method
+        )
 
     async def search_duckduckgo(self, query: str, max_results: int = 10) -> list:
         """使用DuckDuckGo进行搜索"""
@@ -973,7 +990,10 @@ class WebSearcher:
             }
 
             async with self._request_with_retry(
-                url, json=payload, timeout=aiohttp.ClientTimeout(total=30), method="POST"
+                url,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=30),
+                method="POST",
             ) as response:
                 if response.status == 200:
                     data = await response.json()

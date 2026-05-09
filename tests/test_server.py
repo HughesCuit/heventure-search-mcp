@@ -1861,6 +1861,7 @@ class TestSSRFValidation:
     @pytest.mark.asyncio
     async def test_get_page_content_rejects_non_html(self):
         """get_page_content 拒绝非 HTML 内容 (application/pdf)"""
+
         async def async_text():
             return b"%PDF-1.4 fake pdf content"
 
@@ -2164,22 +2165,67 @@ class TestBothModePriority:
     async def test_both_mode_results_ordered_by_engine_priority(self, searcher):
         """Google results should come before Bing, which should come before DuckDuckGo."""
         google_results = [
-            {"title": "Google 1", "url": "https://google.com/1", "snippet": "gs1", "type": "google_result"},
-            {"title": "Google 2", "url": "https://google.com/2", "snippet": "gs2", "type": "google_result"},
+            {
+                "title": "Google 1",
+                "url": "https://google.com/1",
+                "snippet": "gs1",
+                "type": "google_result",
+            },
+            {
+                "title": "Google 2",
+                "url": "https://google.com/2",
+                "snippet": "gs2",
+                "type": "google_result",
+            },
         ]
         bing_results = [
-            {"title": "Bing 1", "url": "https://bing.com/1", "snippet": "bs1", "type": "bing_result"},
-            {"title": "Bing 2", "url": "https://bing.com/2", "snippet": "bs2", "type": "bing_result"},
+            {
+                "title": "Bing 1",
+                "url": "https://bing.com/1",
+                "snippet": "bs1",
+                "type": "bing_result",
+            },
+            {
+                "title": "Bing 2",
+                "url": "https://bing.com/2",
+                "snippet": "bs2",
+                "type": "bing_result",
+            },
         ]
         ddg_results = [
-            {"title": "DDG 1", "url": "https://ddg.com/1", "snippet": "ds1", "type": "related_topic"},
-            {"title": "DDG 2", "url": "https://ddg.com/2", "snippet": "ds2", "type": "related_topic"},
+            {
+                "title": "DDG 1",
+                "url": "https://ddg.com/1",
+                "snippet": "ds1",
+                "type": "related_topic",
+            },
+            {
+                "title": "DDG 2",
+                "url": "https://ddg.com/2",
+                "snippet": "ds2",
+                "type": "related_topic",
+            },
         ]
 
         with (
-            patch.object(WebSearcher, "search_google", new_callable=AsyncMock, return_value=google_results),
-            patch.object(WebSearcher, "search_bing", new_callable=AsyncMock, return_value=bing_results),
-            patch.object(WebSearcher, "search_duckduckgo", new_callable=AsyncMock, return_value=ddg_results),
+            patch.object(
+                WebSearcher,
+                "search_google",
+                new_callable=AsyncMock,
+                return_value=google_results,
+            ),
+            patch.object(
+                WebSearcher,
+                "search_bing",
+                new_callable=AsyncMock,
+                return_value=bing_results,
+            ),
+            patch.object(
+                WebSearcher,
+                "search_duckduckgo",
+                new_callable=AsyncMock,
+                return_value=ddg_results,
+            ),
         ):
             response = await server.handle_call_tool(
                 "web_search",
@@ -2199,20 +2245,55 @@ class TestBothModePriority:
     async def test_both_mode_dedup_preserves_priority(self, searcher):
         """When same URL appears in multiple engines, first occurrence (by engine list order) wins dedup."""
         google_results = [
-            {"title": "Google Unique", "url": "https://google.com/unique", "snippet": "google only", "type": "google_result"},
+            {
+                "title": "Google Unique",
+                "url": "https://google.com/unique",
+                "snippet": "google only",
+                "type": "google_result",
+            },
         ]
         bing_results = [
-            {"title": "Bing Unique", "url": "https://bing.com/unique", "snippet": "bing only", "type": "bing_result"},
-            {"title": "Bing Shared", "url": "https://shared.com/page", "snippet": "from bing", "type": "bing_result"},
+            {
+                "title": "Bing Unique",
+                "url": "https://bing.com/unique",
+                "snippet": "bing only",
+                "type": "bing_result",
+            },
+            {
+                "title": "Bing Shared",
+                "url": "https://shared.com/page",
+                "snippet": "from bing",
+                "type": "bing_result",
+            },
         ]
         ddg_results = [
-            {"title": "DDG Shared", "url": "https://shared.com/page", "snippet": "from ddg", "type": "related_topic"},
+            {
+                "title": "DDG Shared",
+                "url": "https://shared.com/page",
+                "snippet": "from ddg",
+                "type": "related_topic",
+            },
         ]
 
         with (
-            patch.object(WebSearcher, "search_google", new_callable=AsyncMock, return_value=google_results),
-            patch.object(WebSearcher, "search_bing", new_callable=AsyncMock, return_value=bing_results),
-            patch.object(WebSearcher, "search_duckduckgo", new_callable=AsyncMock, return_value=ddg_results),
+            patch.object(
+                WebSearcher,
+                "search_google",
+                new_callable=AsyncMock,
+                return_value=google_results,
+            ),
+            patch.object(
+                WebSearcher,
+                "search_bing",
+                new_callable=AsyncMock,
+                return_value=bing_results,
+            ),
+            patch.object(
+                WebSearcher,
+                "search_duckduckgo",
+                new_callable=AsyncMock,
+                return_value=ddg_results,
+            ),
         ):
             response = await server.handle_call_tool(
                 "web_search",
@@ -2242,7 +2323,12 @@ class TestSessionSingleton:
         mock_session = MagicMock()
         mock_session.closed = False
 
-        with patch.object(server, "_get_shared_session", new_callable=AsyncMock, return_value=mock_session):
+        with patch.object(
+            server,
+            "_get_shared_session",
+            new_callable=AsyncMock,
+            return_value=mock_session,
+        ):
             # First context manager
             async with WebSearcher() as s1:
                 assert s1.session is mock_session
@@ -2257,7 +2343,12 @@ class TestSessionSingleton:
         mock_session = MagicMock()
         mock_session.closed = False
 
-        with patch.object(server, "_get_shared_session", new_callable=AsyncMock, return_value=mock_session):
+        with patch.object(
+            server,
+            "_get_shared_session",
+            new_callable=AsyncMock,
+            return_value=mock_session,
+        ):
             async with WebSearcher() as _searcher:
                 pass  # normal exit
 
@@ -2274,7 +2365,9 @@ class TestSessionSingleton:
 
             with (
                 patch.object(aiohttp, "TCPConnector", return_value=mock_connector),
-                patch.object(aiohttp, "ClientSession", return_value=mock_session) as mock_cls,
+                patch.object(
+                    aiohttp, "ClientSession", return_value=mock_session
+                ) as mock_cls,
             ):
                 result = await server._get_shared_session()
                 assert result is mock_session
@@ -2309,16 +2402,35 @@ class TestSessionSingleton:
             return result
 
         with (
-            patch.object(server, "_get_shared_session", new_callable=AsyncMock, return_value=mock_session),
+            patch.object(
+                server,
+                "_get_shared_session",
+                new_callable=AsyncMock,
+                return_value=mock_session,
+            ),
             patch.object(WebSearcher, "__aenter__", tracked_aenter),
         ):
             # First call: web_search (search engines will fail, but that's fine)
-            with patch.object(WebSearcher, "search_duckduckgo", new_callable=AsyncMock, return_value=[]):
-                await handle_call_tool("web_search", {"query": "test query 1", "max_results": 1})
+            with patch.object(
+                WebSearcher,
+                "search_duckduckgo",
+                new_callable=AsyncMock,
+                return_value=[],
+            ):
+                await handle_call_tool(
+                    "web_search", {"query": "test query 1", "max_results": 1}
+                )
 
             # Second call: get_webpage_content
-            with patch.object(WebSearcher, "get_page_content", new_callable=AsyncMock, return_value="page content"):
-                await handle_call_tool("get_webpage_content", {"url": "https://example.com"})
+            with patch.object(
+                WebSearcher,
+                "get_page_content",
+                new_callable=AsyncMock,
+                return_value="page content",
+            ):
+                await handle_call_tool(
+                    "get_webpage_content", {"url": "https://example.com"}
+                )
 
         # Both calls used async with WebSearcher() which calls _get_shared_session
         # and gets the same mock_session each time
@@ -2400,9 +2512,7 @@ class TestRetryLogic:
         mock_cm_success.__aexit__ = AsyncMock(return_value=None)
 
         mock_cm_fail = MagicMock()
-        mock_cm_fail.__aenter__ = AsyncMock(
-            side_effect=asyncio.TimeoutError("timeout")
-        )
+        mock_cm_fail.__aenter__ = AsyncMock(side_effect=asyncio.TimeoutError("timeout"))
         mock_cm_fail.__aexit__ = AsyncMock(return_value=None)
 
         mock_session = MagicMock()

@@ -49,6 +49,7 @@ log = logging.getLogger("kanban-worker")
 # API helpers
 # ---------------------------------------------------------------------------
 
+
 def api_get(server: str, port: int, path: str) -> dict:
     """GET request to Kanban API."""
     url = f"{API_BASE.format(server=server, port=port)}{path}"
@@ -61,10 +62,15 @@ def api_patch(server: str, port: int, path: str, body: dict) -> dict:
     """PATCH request to Kanban API."""
     url = f"{API_BASE.format(server=server, port=port)}{path}"
     data = json.dumps(body).encode()
-    req = Request(url, data=data, method="PATCH", headers={
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    })
+    req = Request(
+        url,
+        data=data,
+        method="PATCH",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
     with urlopen(req, timeout=15) as resp:
         return json.loads(resp.read())
 
@@ -73,10 +79,15 @@ def api_post(server: str, port: int, path: str, body: dict) -> dict:
     """POST request to Kanban API."""
     url = f"{API_BASE.format(server=server, port=port)}{path}"
     data = json.dumps(body).encode()
-    req = Request(url, data=data, method="POST", headers={
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    })
+    req = Request(
+        url,
+        data=data,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
     with urlopen(req, timeout=15) as resp:
         return json.loads(resp.read())
 
@@ -84,6 +95,7 @@ def api_post(server: str, port: int, path: str, body: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------
+
 
 def find_task(server: str, port: int, assignee: str) -> dict | None:
     """Find the highest-priority ready task for this assignee."""
@@ -111,7 +123,9 @@ def claim_task(server: str, port: int, task_id: str) -> bool:
         return False
 
 
-def complete_task(server: str, port: int, task_id: str, summary: str, metadata: dict = None):
+def complete_task(
+    server: str, port: int, task_id: str, summary: str, metadata: dict = None
+):
     """Mark task as done."""
     body = {"status": "done", "summary": summary}
     if metadata:
@@ -121,18 +135,28 @@ def complete_task(server: str, port: int, task_id: str, summary: str, metadata: 
 
 def block_task(server: str, port: int, task_id: str, reason: str):
     """Mark task as blocked."""
-    api_patch(server, port, f"/tasks/{task_id}", {
-        "status": "blocked",
-        "block_reason": reason,
-    })
+    api_patch(
+        server,
+        port,
+        f"/tasks/{task_id}",
+        {
+            "status": "blocked",
+            "block_reason": reason,
+        },
+    )
 
 
 def add_comment(server: str, port: int, task_id: str, body: str):
     """Add a comment to a task."""
-    api_post(server, port, f"/tasks/{task_id}/comments", {
-        "body": body,
-        "author": "pc-eng",
-    })
+    api_post(
+        server,
+        port,
+        f"/tasks/{task_id}/comments",
+        {
+            "body": body,
+            "author": "pc-eng",
+        },
+    )
 
 
 def get_task_detail(server: str, port: int, task_id: str) -> dict:
@@ -143,6 +167,7 @@ def get_task_detail(server: str, port: int, task_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Execution via Claude Code CLI
 # ---------------------------------------------------------------------------
+
 
 def execute_with_claude_code(task_body: str, workspace: str = None) -> tuple[bool, str]:
     """
@@ -193,8 +218,10 @@ Work in the current directory. Be concise and focused."""
 # Main loop
 # ---------------------------------------------------------------------------
 
-def run_once(server: str, port: int, assignee: str, dry_run: bool = False,
-             workspace: str = None) -> bool:
+
+def run_once(
+    server: str, port: int, assignee: str, dry_run: bool = False, workspace: str = None
+) -> bool:
     """Poll once: find a task, claim it, execute it, report result.
     Returns True if a task was processed."""
     task = find_task(server, port, assignee)
@@ -217,7 +244,12 @@ def run_once(server: str, port: int, assignee: str, dry_run: bool = False,
         return False
 
     log.info(f"🔒 Claimed {task_id[:12]}")
-    add_comment(server, port, task_id, f"pc-eng worker claimed this task at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    add_comment(
+        server,
+        port,
+        task_id,
+        f"pc-eng worker claimed this task at {time.strftime('%Y-%m-%d %H:%M:%S')}",
+    )
 
     # Execute
     full_body = f"{title}\n\n{body}" if body else title
@@ -228,11 +260,17 @@ def run_once(server: str, port: int, assignee: str, dry_run: bool = False,
     summary = output[:2000] if output else "(no output)"
 
     if success:
-        complete_task(server, port, task_id, summary=summary, metadata={
-            "worker": "pc-eng",
-            "executor": "claude-code",
-            "duration_estimate": "auto",
-        })
+        complete_task(
+            server,
+            port,
+            task_id,
+            summary=summary,
+            metadata={
+                "worker": "pc-eng",
+                "executor": "claude-code",
+                "duration_estimate": "auto",
+            },
+        )
         log.info(f"✅ Completed {task_id[:12]}")
     else:
         block_task(server, port, task_id, reason=f"Execution failed: {summary[:200]}")
@@ -244,15 +282,30 @@ def run_once(server: str, port: int, assignee: str, dry_run: bool = False,
 def main():
     parser = argparse.ArgumentParser(description="Kanban Worker Poller for PC")
     parser.add_argument("--server", default=DEFAULT_SERVER, help="Kanban server IP")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Kanban dashboard port")
-    parser.add_argument("--assignee", default=DEFAULT_ASSIGNEE, help="Assignee to poll for")
-    parser.add_argument("--poll-interval", type=int, default=DEFAULT_POLL_INTERVAL, help="Seconds between polls")
-    parser.add_argument("--dry-run", action="store_true", help="Find tasks but don't execute")
+    parser.add_argument(
+        "--port", type=int, default=DEFAULT_PORT, help="Kanban dashboard port"
+    )
+    parser.add_argument(
+        "--assignee", default=DEFAULT_ASSIGNEE, help="Assignee to poll for"
+    )
+    parser.add_argument(
+        "--poll-interval",
+        type=int,
+        default=DEFAULT_POLL_INTERVAL,
+        help="Seconds between polls",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Find tasks but don't execute"
+    )
     parser.add_argument("--once", action="store_true", help="Poll once and exit")
-    parser.add_argument("--workspace", default=None, help="Working directory for task execution")
+    parser.add_argument(
+        "--workspace", default=None, help="Working directory for task execution"
+    )
     args = parser.parse_args()
 
-    log.info(f"🚀 Kanban Worker starting — server={args.server}:{args.port} assignee={args.assignee}")
+    log.info(
+        f"🚀 Kanban Worker starting — server={args.server}:{args.port} assignee={args.assignee}"
+    )
     log.info(f"   poll_interval={args.poll_interval}s dry_run={args.dry_run}")
 
     # Test connection
@@ -267,8 +320,11 @@ def main():
     while True:
         try:
             processed = run_once(
-                args.server, args.port, args.assignee,
-                dry_run=args.dry_run, workspace=args.workspace,
+                args.server,
+                args.port,
+                args.assignee,
+                dry_run=args.dry_run,
+                workspace=args.workspace,
             )
             if args.once:
                 if not processed:

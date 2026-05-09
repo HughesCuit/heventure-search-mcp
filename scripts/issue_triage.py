@@ -10,6 +10,7 @@ Usage:
     python3 issue_triage.py              # process all needs-triage issues
     python3 issue_triage.py --dry-run    # preview without changes
 """
+
 import json
 import os
 import re
@@ -37,6 +38,7 @@ XSS_PATTERNS = [
 
 
 # ── Quality signals ─────────────────────────────────────────────────────
+
 
 def check_spam(title: str, body: str) -> tuple[bool, str]:
     """Returns (is_spam, reason)."""
@@ -71,23 +73,23 @@ def check_quality(title: str, body: str, labels: list[str]) -> tuple[bool, str]:
 
     # Check if template was filled (bug report has specific sections)
     is_bug = any("bug" in label.lower() for label in labels)
-    is_feature = any("enhancement" in label.lower() or "feature" in label.lower() for label in labels)
+    is_feature = any(
+        "enhancement" in label.lower() or "feature" in label.lower() for label in labels
+    )
 
     if is_bug:
         # Bug reports should have reproduction steps
-        has_repro = bool(re.search(
-            r"(?i)(step|reproduc|to reproduce|how to|复现|步骤)",
-            body
-        ))
+        has_repro = bool(
+            re.search(r"(?i)(step|reproduc|to reproduce|how to|复现|步骤)", body)
+        )
         if not has_repro:
             return False, "Bug report missing reproduction steps"
 
     if is_feature:
         # Feature requests should describe the problem
-        has_problem = bool(re.search(
-            r"(?i)(problem|frustrat|issue|want|need|希望|需求|问题)",
-            body
-        ))
+        has_problem = bool(
+            re.search(r"(?i)(problem|frustrat|issue|want|need|希望|需求|问题)", body)
+        )
         if not has_problem:
             return False, "Feature request missing problem statement"
 
@@ -121,6 +123,7 @@ def classify_priority(title: str, body: str) -> str:
 
 # ── GitHub API ──────────────────────────────────────────────────────────
 
+
 def load_token() -> str:
     env_path = os.path.expanduser("~/.hermes/.env")
     if os.path.isfile(env_path):
@@ -132,11 +135,14 @@ def load_token() -> str:
     return os.environ.get("GITHUB_TOKEN", "")
 
 
-def github_api(path: str, token: str, method: str = "GET", data: dict | None = None) -> dict | list:
+def github_api(
+    path: str, token: str, method: str = "GET", data: dict | None = None
+) -> dict | list:
     url = f"https://api.github.com{path}"
     body = json.dumps(data).encode() if data else None
     req = urllib.request.Request(
-        url, data=body,
+        url,
+        data=body,
         headers={
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
@@ -164,7 +170,9 @@ def add_label(token: str, issue_number: int, label: str):
         new_labels = current_labels + [label]
         github_api(
             f"/repos/{REPO}/issues/{issue_number}",
-            token, "PATCH", {"labels": new_labels}
+            token,
+            "PATCH",
+            {"labels": new_labels},
         )
         print(f"    ✅ Added label '{label}' to #{issue_number}")
     except Exception as e:
@@ -178,8 +186,7 @@ def remove_label(token: str, issue_number: int, label: str):
         return
     try:
         github_api(
-            f"/repos/{REPO}/issues/{issue_number}/labels/{label}",
-            token, "DELETE"
+            f"/repos/{REPO}/issues/{issue_number}/labels/{label}", token, "DELETE"
         )
     except Exception:
         pass  # label might not exist
@@ -196,16 +203,20 @@ def close_issue(token: str, issue_number: int, reason: str):
         # Close
         github_api(
             f"/repos/{REPO}/issues/{issue_number}",
-            token, "PATCH", {"state": "closed", "state_reason": "not_planned"}
+            token,
+            "PATCH",
+            {"state": "closed", "state_reason": "not_planned"},
         )
         # Add comment
         github_api(
             f"/repos/{REPO}/issues/{issue_number}/comments",
-            token, "POST", {
+            token,
+            "POST",
+            {
                 "body": "🚫 This issue has been automatically closed as spam.\n\n"
-                        f"**Reason:** {reason}\n\n"
-                        "If this was a mistake, please open a new issue with proper details."
-            }
+                f"**Reason:** {reason}\n\n"
+                "If this was a mistake, please open a new issue with proper details."
+            },
         )
         print(f"    🚫 Closed #{issue_number} as spam: {reason}")
     except Exception as e:
@@ -220,7 +231,9 @@ def post_comment(token: str, issue_number: int, body: str):
     try:
         github_api(
             f"/repos/{REPO}/issues/{issue_number}/comments",
-            token, "POST", {"body": body}
+            token,
+            "POST",
+            {"body": body},
         )
         print(f"    💬 Commented on #{issue_number}")
     except Exception as e:
@@ -228,6 +241,7 @@ def post_comment(token: str, issue_number: int, body: str):
 
 
 # ── Main triage loop ───────────────────────────────────────────────────
+
 
 def main():
     token = load_token()
@@ -242,8 +256,7 @@ def main():
     # Fetch issues with needs-triage label
     try:
         issues = github_api(
-            f"/repos/{REPO}/issues?state=open&labels=needs-triage&per_page=50",
-            token
+            f"/repos/{REPO}/issues?state=open&labels=needs-triage&per_page=50", token
         )
         issues = [i for i in issues if "pull_request" not in i]
     except Exception as e:
@@ -279,12 +292,13 @@ def main():
             add_label(token, num, "needs-info")
             remove_label(token, num, "needs-triage")
             post_comment(
-                token, num,
+                token,
+                num,
                 f"👋 Thanks for opening this issue!\n\n"
                 f"We need a bit more information to help:\n\n"
                 f"**{quality_reason}**\n\n"
                 f"Please update the issue description and remove the `needs-info` label "
-                f"when you've added the requested details."
+                f"when you've added the requested details.",
             )
             stats["needs_info"] += 1
             continue
@@ -297,12 +311,12 @@ def main():
         stats["triaged"] += 1
         print(f"    ✅ Triaged (priority: {priority})")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("📊 Triage complete:")
     print(f"   🚫 Spam closed: {stats['spam']}")
     print(f"   ❓ Needs info:  {stats['needs_info']}")
     print(f"   ✅ Triaged:     {stats['triaged']}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

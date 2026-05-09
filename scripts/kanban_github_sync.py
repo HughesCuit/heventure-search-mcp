@@ -7,6 +7,7 @@ Direction 2: GitHub open Issues → create Kanban tasks (with idempotency)
 Usage:
     python3 kanban_github_sync.py [--dry-run]
 """
+
 import json
 import os
 import sqlite3
@@ -22,6 +23,7 @@ DRY_RUN = "--dry-run" in sys.argv
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
+
 def load_token() -> str:
     env_path = os.path.expanduser("~/.hermes/.env")
     if os.path.isfile(env_path):
@@ -33,11 +35,14 @@ def load_token() -> str:
     return os.environ.get("GITHUB_TOKEN", "")
 
 
-def github_api(path: str, token: str, method: str = "GET", data: dict | None = None) -> dict | list:
+def github_api(
+    path: str, token: str, method: str = "GET", data: dict | None = None
+) -> dict | list:
     url = f"https://api.github.com{path}"
     body = json.dumps(data).encode() if data else None
     req = urllib.request.Request(
-        url, data=body,
+        url,
+        data=body,
         headers={
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
@@ -87,6 +92,7 @@ def has_kanban_task(issue: dict, kanban_tasks: list[tuple]) -> str | None:
 
 # ── Direction 1: Kanban done → Close GitHub Issues ──────────────────────
 
+
 def sync_kanban_done_to_github(conn: sqlite3.Connection, token: str) -> dict:
     """Find done Kanban tasks and close their matching GitHub Issues."""
     done_tasks = conn.execute(
@@ -95,9 +101,7 @@ def sync_kanban_done_to_github(conn: sqlite3.Connection, token: str) -> dict:
 
     # Fetch open Issues once (not per task)
     try:
-        issues = github_api(
-            f"/repos/{REPO}/issues?state=open&per_page=100", token
-        )
+        issues = github_api(f"/repos/{REPO}/issues?state=open&per_page=100", token)
         issues = [i for i in issues if "pull_request" not in i]
     except Exception as e:
         print(f"  ⚠️ Failed to fetch issues: {e}")
@@ -105,7 +109,6 @@ def sync_kanban_done_to_github(conn: sqlite3.Connection, token: str) -> dict:
 
     closed = []
     for task_id, task_title in done_tasks:
-
         for issue in issues:
             body = issue.get("body", "") or ""
             if task_id in body:
@@ -113,12 +116,19 @@ def sync_kanban_done_to_github(conn: sqlite3.Connection, token: str) -> dict:
                     print(f"  🔍 [DRY] Would close #{issue['number']} for {task_id}")
                 else:
                     try:
-                        run_cmd([
-                            "python3", BRIDGE, "close",
-                            "--kanban-id", task_id,
-                            "--issue-number", str(issue["number"]),
-                            "--summary", f"Completed: {task_title}",
-                        ])
+                        run_cmd(
+                            [
+                                "python3",
+                                BRIDGE,
+                                "close",
+                                "--kanban-id",
+                                task_id,
+                                "--issue-number",
+                                str(issue["number"]),
+                                "--summary",
+                                f"Completed: {task_title}",
+                            ]
+                        )
                         print(f"  ✅ Closed #{issue['number']} for {task_id}")
                     except Exception as e:
                         print(f"  ❌ Failed to close #{issue['number']}: {e}")
@@ -129,6 +139,7 @@ def sync_kanban_done_to_github(conn: sqlite3.Connection, token: str) -> dict:
 
 
 # ── Direction 2: GitHub open Issues → Create Kanban tasks ────────────────
+
 
 def sync_github_to_kanban(conn: sqlite3.Connection, token: str) -> dict:
     """Create Kanban tasks for open GitHub Issues that don't have one."""
@@ -176,40 +187,67 @@ def sync_github_to_kanban(conn: sqlite3.Connection, token: str) -> dict:
             continue
 
         try:
-            result = run_cmd([
-                "hermes", "kanban", "create", title,
-                "--body", kanban_body,
-                "--assignee", "backend-eng",
-                "--priority", str(priority),
-                "--idempotency-key", f"gh-issue-{num}",
-                "--json",
-            ])
+            result = run_cmd(
+                [
+                    "hermes",
+                    "kanban",
+                    "create",
+                    title,
+                    "--body",
+                    kanban_body,
+                    "--assignee",
+                    "backend-eng",
+                    "--priority",
+                    str(priority),
+                    "--idempotency-key",
+                    f"gh-issue-{num}",
+                    "--json",
+                ]
+            )
             task_id = result.get("id", result.get("task_id", "unknown"))
 
             # Link back to GitHub Issue
             if task_id and task_id != "unknown":
-                run_cmd([
-                    "python3", BRIDGE, "link",
-                    "--kanban-id", task_id,
-                    "--issue-number", str(num),
-                ])
+                run_cmd(
+                    [
+                        "python3",
+                        BRIDGE,
+                        "link",
+                        "--kanban-id",
+                        task_id,
+                        "--issue-number",
+                        str(num),
+                    ]
+                )
 
             # Subscribe to Discord notifications
-            run_cmd([
-                "hermes", "kanban", "notify-subscribe", task_id,
-                "--platform", "discord",
-                "--chat-id", "1492843034168000673",
-            ])
+            run_cmd(
+                [
+                    "hermes",
+                    "kanban",
+                    "notify-subscribe",
+                    task_id,
+                    "--platform",
+                    "discord",
+                    "--chat-id",
+                    "1492843034168000673",
+                ]
+            )
 
             print(f"  ✅ Created {task_id} for #{num}: {title[:50]}")
             created.append(num)
         except Exception as e:
             print(f"  ❌ Failed to create task for #{num}: {e}")
 
-    return {"created": len(created), "skipped": len(skipped), "total_issues": len(issues)}
+    return {
+        "created": len(created),
+        "skipped": len(skipped),
+        "total_issues": len(issues),
+    }
 
 
 # ── Main ─────────────────────────────────────────────────────────────────
+
 
 def main():
     token = load_token()
@@ -227,20 +265,24 @@ def main():
     # Direction 1
     print("\n📤 Direction 1: Kanban done → Close GitHub Issues")
     r1 = sync_kanban_done_to_github(conn, token)
-    print(f"   Checked {r1['done_checked']} done tasks, closed {len(r1['closed'])} Issues")
+    print(
+        f"   Checked {r1['done_checked']} done tasks, closed {len(r1['closed'])} Issues"
+    )
 
     # Direction 2
     print("\n📥 Direction 2: GitHub open Issues → Create Kanban tasks")
     r2 = sync_github_to_kanban(conn, token)
-    print(f"   {r2['total_issues']} open Issues: {r2['created']} tasks created, {r2['skipped']} already synced")
+    print(
+        f"   {r2['total_issues']} open Issues: {r2['created']} tasks created, {r2['skipped']} already synced"
+    )
 
     conn.close()
 
     # Summary
     total_ops = len(r1["closed"]) + r2["created"]
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"✅ Sync complete — {total_ops} operations performed")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

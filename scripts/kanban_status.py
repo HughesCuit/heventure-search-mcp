@@ -85,24 +85,30 @@ def get_recent_completions(conn, tasks):
                     summary = run[0][:200]
             except Exception:
                 pass
-        completions.append({
-            "id": t["id"],
-            "title": t["title"],
-            "summary": summary,
-        })
+        completions.append(
+            {
+                "id": t["id"],
+                "title": t["title"],
+                "summary": summary,
+            }
+        )
     return completions
 
 
 def main():
     if not os.path.exists(DB_PATH):
-        print(json.dumps({
-            "error": f"Database not found: {DB_PATH}",
-            "total": 0,
-            "by_status": {},
-            "running_tasks": [],
-            "blocked_tasks": [],
-            "recent_completions": [],
-        }))
+        print(
+            json.dumps(
+                {
+                    "error": f"Database not found: {DB_PATH}",
+                    "total": 0,
+                    "by_status": {},
+                    "running_tasks": [],
+                    "blocked_tasks": [],
+                    "recent_completions": [],
+                }
+            )
+        )
         return 0
 
     try:
@@ -123,12 +129,16 @@ def main():
         running = []
         for t in tasks:
             if t["status"] == "running":
-                running.append({
-                    "id": t["id"],
-                    "title": t["title"],
-                    "assignee": t.get("assignee") or "",
-                    "age_minutes": minutes_since(t.get("started_at") or t.get("created_at")),
-                })
+                running.append(
+                    {
+                        "id": t["id"],
+                        "title": t["title"],
+                        "assignee": t.get("assignee") or "",
+                        "age_minutes": minutes_since(
+                            t.get("started_at") or t.get("created_at")
+                        ),
+                    }
+                )
 
         # Blocked tasks
         blocked_task_ids = [t["id"] for t in tasks if t["status"] == "blocked"]
@@ -136,11 +146,13 @@ def main():
         blocked = []
         for t in tasks:
             if t["status"] == "blocked":
-                blocked.append({
-                    "id": t["id"],
-                    "title": t["title"],
-                    "reason": block_reasons.get(t["id"], ""),
-                })
+                blocked.append(
+                    {
+                        "id": t["id"],
+                        "title": t["title"],
+                        "reason": block_reasons.get(t["id"], ""),
+                    }
+                )
 
         recent = get_recent_completions(conn, tasks)
 
@@ -157,9 +169,18 @@ def main():
         return 0
 
     except Exception as e:
-        print(json.dumps({"error": str(e), "total": 0, "by_status": {},
-                          "running_tasks": [], "blocked_tasks": [],
-                          "recent_completions": []}))
+        print(
+            json.dumps(
+                {
+                    "error": str(e),
+                    "total": 0,
+                    "by_status": {},
+                    "running_tasks": [],
+                    "blocked_tasks": [],
+                    "recent_completions": [],
+                }
+            )
+        )
         return 1
 
 
