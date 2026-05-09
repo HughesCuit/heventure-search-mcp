@@ -45,7 +45,7 @@ def check_requirements():
     print("检查发布要求...")
 
     # 检查必要文件
-    required_files = ["README.md", "pyproject.toml", "server.py"]
+    required_files = ["README.md", "pyproject.toml", "heventure_search_mcp/server.py"]
     for file in required_files:
         if not Path(file).exists():
             print(f"错误: 缺少必要文件 {file}")
