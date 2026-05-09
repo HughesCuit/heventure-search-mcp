@@ -98,7 +98,9 @@ class WebSearcher:
     """网页搜索器类"""
 
     # 类级别的缓存（搜索结果缓存）
-    _search_cache: OrderedDict = OrderedDict()  # key -> (results, timestamp), LRU ordered
+    _search_cache: OrderedDict = (
+        OrderedDict()
+    )  # key -> (results, timestamp), LRU ordered
     _cache_max_size: int = 100
     _cache_ttl_seconds: int = 300  # 5 minutes default TTL
 
@@ -227,7 +229,13 @@ class WebSearcher:
         """检查主机名解析后的 IP 是否为私有/保留地址（用于重定向后的二次检查）"""
         try:
             ip = ipaddress.ip_address(hostname)
-            return ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_private or ip.is_unspecified
+            return (
+                ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_private
+                or ip.is_unspecified
+            )
         except ValueError:
             # hostname is a domain name, resolve it to IPs
             try:
@@ -237,7 +245,13 @@ class WebSearcher:
                 return True  # DNS failure → treat as private
             for _, _, _, _, sockaddr in addrinfos:
                 ip = ipaddress.ip_address(sockaddr[0])
-                if ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_private or ip.is_unspecified:
+                if (
+                    ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_reserved
+                    or ip.is_private
+                    or ip.is_unspecified
+                ):
                     return True
             return False
 
@@ -427,7 +441,6 @@ class WebSearcher:
         """
         return self._RetryGetContextManager(self.session, url, retries, delay, kwargs)
 
-
     async def search_duckduckgo(self, query: str, max_results: int = 10) -> list:
         """使用DuckDuckGo进行搜索"""
         cache_key = self._get_cache_key(query, "duckduckgo", max_results)
@@ -464,7 +477,9 @@ class WebSearcher:
                                 return results
                         else:
                             logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
-                            results = await self.search_html_duckduckgo(query, max_results)
+                            results = await self.search_html_duckduckgo(
+                                query, max_results
+                            )
                             self._set_to_cache(cache_key, results)
                             return results
 
@@ -660,8 +675,8 @@ class WebSearcher:
             # 备用: 任何包含 h2 和 a 标签的 li
             if not result_items:
                 for li in soup.find_all("li"):
-                    h2_elem = li.find('h2')
-                    if h2_elem and h2_elem.find('a'):
+                    h2_elem = li.find("h2")
+                    if h2_elem and h2_elem.find("a"):
                         result_items.append(li)
                         if len(result_items) >= max_results * 2:
                             break
@@ -999,6 +1014,12 @@ class WebSearcher:
             if response is None or response.status != 200:
                 return ""
 
+            # 检查 Content-Type：仅处理 HTML 页面，拒绝 PDF/图片等
+            content_type = response.headers.get("Content-Type", "")
+            if not content_type.startswith("text/html"):
+                logger.warning(f"不支持的内容类型: {content_type} (URL: {url})")
+                return f"不支持的内容类型: {content_type or '未知'} (仅支持 HTML 页面)"
+
             html = await self._safe_response_text(response)
             soup = BeautifulSoup(html, "html.parser")
 
@@ -1041,7 +1062,14 @@ async def handle_list_tools() -> list[Tool]:
                     "search_engine": {
                         "type": "string",
                         "description": "搜索引擎选择：duckduckgo / bing / google / serpapi / tavily / both",
-                        "enum": ["duckduckgo", "bing", "google", "serpapi", "tavily", "both"],
+                        "enum": [
+                            "duckduckgo",
+                            "bing",
+                            "google",
+                            "serpapi",
+                            "tavily",
+                            "both",
+                        ],
                         "default": "both",
                     },
                 },
@@ -1196,7 +1224,11 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[TextConten
 
         # SSRF 防护：在入口处即验证 URL
         if WebSearcher._validate_url(url) is None:
-            return [TextContent(type="text", text="错误：URL 不安全，仅允许公网 HTTP(S) 地址")]
+            return [
+                TextContent(
+                    type="text", text="错误：URL 不安全，仅允许公网 HTTP(S) 地址"
+                )
+            ]
 
         async with WebSearcher() as searcher:
             content = await searcher.get_page_content(url)

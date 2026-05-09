@@ -2,6 +2,7 @@
 测试用例 for heventure-search-mcp
 """
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -191,6 +192,7 @@ class TestWebSearcher:
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.text = async_text
+        mock_response.headers = {"Content-Type": "text/html; charset=utf-8"}
 
         # 创建一个支持 async with 的 mock
         mock_cm = MagicMock()
@@ -1856,6 +1858,71 @@ class TestSSRFValidation:
             result = await searcher.get_page_content("http://[::1]:3000/api")
             assert result == ""
 
+    @pytest.mark.asyncio
+    async def test_get_page_content_rejects_non_html(self):
+        """get_page_content 拒绝非 HTML 内容 (application/pdf)"""
+        async def async_text():
+            return b"%PDF-1.4 fake pdf content"
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = async_text
+        mock_response.headers = {"Content-Type": "application/pdf"}
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        async with WebSearcher() as searcher:
+            searcher.session = mock_session
+            result = await searcher.get_page_content("https://example.com/doc.pdf")
+            assert "不支持的内容类型" in result
+            assert "application/pdf" in result
+
+    @pytest.mark.asyncio
+    async def test_get_page_content_rejects_image(self):
+        """get_page_content 拒绝图片内容 (image/png)"""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock()
+        mock_response.headers = {"Content-Type": "image/png"}
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        async with WebSearcher() as searcher:
+            searcher.session = mock_session
+            result = await searcher.get_page_content("https://example.com/photo.png")
+            assert "不支持的内容类型" in result
+            assert "image/png" in result
+
+    @pytest.mark.asyncio
+    async def test_get_page_content_no_content_type(self):
+        """get_page_content 处理无 Content-Type 头的情况"""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock()
+        mock_response.headers = {}
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+
+        async with WebSearcher() as searcher:
+            searcher.session = mock_session
+            result = await searcher.get_page_content("https://example.com")
+            assert "不支持的内容类型" in result
+
 
 class TestSSRFRedirectBypass:
     """SSRF 重定向绕过测试"""
@@ -2259,3 +2326,147 @@ class TestSessionSingleton:
         assert sessions_used[0] is mock_session
         assert sessions_used[1] is mock_session
         assert sessions_used[0] is sessions_used[1]
+
+
+class TestRetryLogic:
+    """Tests for retry logic on network timeouts/connection errors."""
+
+    @pytest.fixture
+    def searcher(self):
+        WebSearcher.clear_cache()
+        return WebSearcher()
+
+    # --- _safe_get_with_retry tests ---
+
+    @pytest.mark.asyncio
+    async def test_safe_get_with_retry_success_on_first_try(self, searcher):
+        """_safe_get_with_retry returns response on first attempt."""
+        mock_response = MagicMock()
+        mock_response.status = 200
+
+        with patch.object(
+            searcher, "_safe_get", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_safe_get:
+            result = await searcher._safe_get_with_retry("http://example.com")
+            assert result is mock_response
+            assert mock_safe_get.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_safe_get_with_retry_success_on_retry(self, searcher):
+        """_safe_get_with_retry retries once then succeeds."""
+        mock_response = MagicMock()
+        mock_response.status = 200
+
+        with (
+            patch.object(
+                searcher,
+                "_safe_get",
+                new_callable=AsyncMock,
+                side_effect=[None, mock_response],
+            ) as mock_safe_get,
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            result = await searcher._safe_get_with_retry(
+                "http://example.com", delay=1.0
+            )
+            assert result is mock_response
+            assert mock_safe_get.call_count == 2
+            mock_sleep.assert_called_once_with(1.0)
+
+    @pytest.mark.asyncio
+    async def test_safe_get_with_retry_exhausts_retries(self, searcher):
+        """_safe_get_with_retry returns None after all retries exhausted."""
+        with (
+            patch.object(
+                searcher, "_safe_get", new_callable=AsyncMock, return_value=None
+            ) as mock_safe_get,
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            result = await searcher._safe_get_with_retry("http://example.com")
+            assert result is None
+            # 1 initial + 1 retry = 2 calls
+            assert mock_safe_get.call_count == 2
+
+    # --- _get_with_retry tests (for DuckDuckGo session.get wrapper) ---
+
+    @pytest.mark.asyncio
+    async def test_get_with_retry_success_on_retry(self, searcher):
+        """_request_with_retry retries after TimeoutError, then succeeds."""
+        mock_response = MagicMock()
+        mock_response.status = 200
+
+        mock_cm_success = MagicMock()
+        mock_cm_success.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm_success.__aexit__ = AsyncMock(return_value=None)
+
+        mock_cm_fail = MagicMock()
+        mock_cm_fail.__aenter__ = AsyncMock(
+            side_effect=asyncio.TimeoutError("timeout")
+        )
+        mock_cm_fail.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=[mock_cm_fail, mock_cm_success])
+        searcher.session = mock_session
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            async with searcher._request_with_retry(
+                "http://example.com", delay=1.0
+            ) as response:
+                assert response is mock_response
+            assert mock_session.get.call_count == 2
+            mock_sleep.assert_called_once_with(1.0)
+
+    # --- Integration tests for search engines with retry ---
+
+    @pytest.mark.asyncio
+    async def test_search_bing_retry_on_timeout(self, searcher):
+        """search_bing retries on timeout and still returns results."""
+        html_content = '<html><body><ol id="b_results"><li><h2><a href="https://example.com/result1">Result 1</a></h2><p>Snippet 1</p></li></ol></body></html>'
+
+        mock_response_fail = None
+        mock_response_success = MagicMock()
+        mock_response_success.status = 200
+
+        async def safe_text_success():
+            return html_content
+
+        mock_response_success.text = safe_text_success
+
+        with (
+            patch.object(
+                searcher,
+                "_safe_get",
+                new_callable=AsyncMock,
+                side_effect=[mock_response_fail, mock_response_success],
+            ),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            results = await searcher.search_bing("test query")
+            assert isinstance(results, list)
+
+    @pytest.mark.asyncio
+    async def test_search_google_retry_on_timeout(self, searcher):
+        """search_google retries on timeout and still returns results."""
+        html_content = "<html><body><div id='search'><h3><a href='https://example.com/result1'>Result 1</a></h3></div></body></html>"
+
+        mock_response_fail = None
+        mock_response_success = MagicMock()
+        mock_response_success.status = 200
+
+        async def safe_text_success():
+            return html_content
+
+        mock_response_success.text = safe_text_success
+
+        with (
+            patch.object(
+                searcher,
+                "_safe_get",
+                new_callable=AsyncMock,
+                side_effect=[mock_response_fail, mock_response_success],
+            ),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            results = await searcher.search_google("test query")
+            assert isinstance(results, list)
