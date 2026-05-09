@@ -10,7 +10,7 @@ import aiohttp
 import pytest
 
 from heventure_search_mcp import server
-from heventure_search_mcp.server import WebSearcher
+from heventure_search_mcp.server import WebSearcher, _SafeGetResponse
 
 
 class TestWebSearcher:
@@ -134,6 +134,75 @@ class TestWebSearcher:
         assert results[0]["type"] == "web_result"
 
     @pytest.mark.asyncio
+    async def test_search_html_duckduckgo_url_decode(self, searcher):
+        """测试 DuckDuckGo HTML 搜索结果 URL 解码（uddg 参数提取）"""
+        from urllib.parse import quote
+
+        target_url = "https://example.com/path/to/page"
+        encoded_url = quote(target_url, safe="")
+        ddg_href = f"//duckduckgo.com/l/?uddg={encoded_url}&rut=abc123"
+
+        html_content = f"""
+        <html>
+            <div class="result">
+                <a class="result__a" href="{ddg_href}">Test Title</a>
+                <a class="result__snippet">Test snippet</a>
+            </div>
+        </html>
+        """
+
+        async def async_text():
+            return html_content
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = async_text
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_html_duckduckgo("test query", max_results=5)
+        assert len(results) == 1
+        assert results[0]["url"] == target_url
+
+    def test_decode_ddg_url(self):
+        """测试 DDG URL 解码辅助方法"""
+        from urllib.parse import quote
+
+        target = "https://example.com/page"
+        encoded = quote(target, safe="")
+
+        # Protocol-relative DDG redirect
+        ddg = f"//duckduckgo.com/l/?uddg={encoded}&rut=abc"
+        assert WebSearcher._decode_ddg_url(ddg) == target
+
+        # With https scheme
+        ddg_https = f"https://duckduckgo.com/l/?uddg={encoded}"
+        assert WebSearcher._decode_ddg_url(ddg_https) == target
+
+        # Non-DDG URL should pass through
+        normal = "https://example.com/page"
+        assert WebSearcher._decode_ddg_url(normal) == normal
+
+        # Empty string
+        assert WebSearcher._decode_ddg_url("") == ""
+
+        # No uddg param
+        no_uddg = "//duckduckgo.com/l/?other=value"
+        assert WebSearcher._decode_ddg_url(no_uddg) == no_uddg
+
+        # Chinese URL in uddg
+        cn_url = "https://example.com/中文路径"
+        encoded_cn = quote(cn_url, safe="")
+        ddg_cn = f"//duckduckgo.com/l/?uddg={encoded_cn}"
+        assert WebSearcher._decode_ddg_url(ddg_cn) == cn_url
+
+    @pytest.mark.asyncio
     async def test_search_bing(self, searcher):
         """测试必应搜索"""
         html_content = """
@@ -157,6 +226,7 @@ class TestWebSearcher:
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.text = async_text
+        mock_response.headers = {"Some-Header": "value"}
 
         # 创建一个支持 async with 的 mock
         mock_cm = MagicMock()
@@ -343,7 +413,7 @@ class TestSearchGoogle:
 
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.text = AsyncMock(return_value=google_html)
+        mock_response.text = google_html
         searcher._safe_get = AsyncMock(return_value=mock_response)
 
         results = await searcher.search_google("test query", max_results=10)
@@ -368,7 +438,7 @@ class TestSearchGoogle:
         )
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.text = AsyncMock(return_value=empty_html)
+        mock_response.text = empty_html
         searcher._safe_get = AsyncMock(return_value=mock_response)
 
         results = await searcher.search_google("test query")
@@ -385,7 +455,7 @@ class TestSearchGoogle:
         )
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.text = AsyncMock(return_value=captcha_html)
+        mock_response.text = captcha_html
         searcher._safe_get = AsyncMock(return_value=mock_response)
 
         results = await searcher.search_google("test query")
@@ -439,7 +509,7 @@ class TestSearchGoogle:
                 return None
             response = AsyncMock()
             response.status = 200
-            response.text = AsyncMock(return_value=google_html)
+            response.text = google_html
             return response
 
         searcher._safe_get = mock_safe_get
@@ -498,6 +568,8 @@ class TestSafeGet:
         """测试正常 200 响应直接返回"""
         mock_response = AsyncMock()
         mock_response.status = 200
+        mock_response.headers = {}
+        mock_response.text = AsyncMock(return_value="")
 
         mock_cm = MagicMock()
         mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
@@ -507,7 +579,8 @@ class TestSafeGet:
         searcher.session = mock_session
 
         result = await searcher._safe_get("https://example.com")
-        assert result == mock_response
+        assert isinstance(result, _SafeGetResponse)
+        assert result.status == 200
         mock_session.get.assert_called_once_with(
             "https://example.com", allow_redirects=False
         )
@@ -521,6 +594,8 @@ class TestSafeGet:
 
         final_response = AsyncMock()
         final_response.status = 200
+        final_response.headers = {}
+        final_response.text = AsyncMock(return_value="final body")
 
         call_count = 0
 
@@ -540,7 +615,8 @@ class TestSafeGet:
         searcher.session = mock_session
 
         result = await searcher._safe_get("https://example.com/start")
-        assert result == final_response
+        assert isinstance(result, _SafeGetResponse)
+        assert result.status == 200
         assert mock_session.get.call_count == 2
 
     @pytest.mark.asyncio
@@ -603,6 +679,8 @@ class TestSafeGet:
 
         final_response = AsyncMock()
         final_response.status = 200
+        final_response.headers = {}
+        final_response.text = AsyncMock(return_value="")
 
         call_count = 0
 
@@ -622,7 +700,8 @@ class TestSafeGet:
         searcher.session = mock_session
 
         result = await searcher._safe_get("https://example.com/start")
-        assert result == final_response
+        assert isinstance(result, _SafeGetResponse)
+        assert result.status == 200
         # 验证第二次请求的 URL 中 mkt 参数被剥离
         second_call_url = mock_session.get.call_args_list[1][0][0]
         assert "mkt" not in second_call_url
@@ -639,6 +718,8 @@ class TestSafeGet:
 
         final_response = AsyncMock()
         final_response.status = 200
+        final_response.headers = {}
+        final_response.text = AsyncMock(return_value="")
 
         call_count = 0
 
@@ -660,7 +741,8 @@ class TestSafeGet:
         # Mock _is_ip_private to avoid SSRF blocking on unresolvable domain
         with patch.object(WebSearcher, "_is_ip_private", return_value=False):
             result = await searcher._safe_get("https://example.com/start")
-        assert result == final_response
+        assert isinstance(result, _SafeGetResponse)
+        assert result.status == 200
         # 验证第二次请求的 URL 保持 bingnews.example.com，未被重写
         second_call_url = mock_session.get.call_args_list[1][0][0]
         assert "bingnews.example.com" in second_call_url
@@ -677,6 +759,8 @@ class TestSafeGet:
 
         final_response = AsyncMock()
         final_response.status = 200
+        final_response.headers = {}
+        final_response.text = AsyncMock(return_value="")
 
         call_count = 0
 
@@ -696,7 +780,8 @@ class TestSafeGet:
         searcher.session = mock_session
 
         result = await searcher._safe_get("https://example.com/start")
-        assert result == final_response
+        assert isinstance(result, _SafeGetResponse)
+        assert result.status == 200
         # cn.bing.com 应被规范化为 www.bing.com
         second_call_url = mock_session.get.call_args_list[1][0][0]
         assert "www.bing.com" in second_call_url
@@ -740,6 +825,38 @@ class TestSafeGet:
 
         result = await searcher._safe_response_text(mock_response)
         assert result == "<html>hello</html>"
+
+    @pytest.mark.asyncio
+    async def test_safe_get_response_is_closed(self, searcher):
+        """_safe_get must close the aiohttp response inside the async with block.
+
+        In Python 3.14 + newer aiohttp, unclosed ClientResponse raises
+        ResourceWarning. _safe_get now reads the body and returns a
+        _SafeGetResponse, ensuring the response is released via __aexit__.
+        """
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {"Content-Type": "text/html"}
+        mock_response.text = AsyncMock(return_value="<html>ok</html>")
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com")
+
+        # Body must have been read inside the context manager
+        mock_response.text.assert_awaited_once()
+        # Context manager must have been exited (response closed)
+        mock_cm.__aexit__.assert_awaited_once()
+        # Return type is _SafeGetResponse, not raw aiohttp response
+        assert isinstance(result, _SafeGetResponse)
+        assert result.status == 200
+        assert result.text == "<html>ok</html>"
+        assert result.headers == {"Content-Type": "text/html"}
 
 
 class TestCache:
@@ -2073,6 +2190,8 @@ class TestSSRFRedirectBypass:
 
         final_response = AsyncMock()
         final_response.status = 200
+        final_response.headers = {}
+        final_response.text = AsyncMock(return_value="")
 
         call_count = 0
 
@@ -2092,7 +2211,8 @@ class TestSSRFRedirectBypass:
         searcher.session = mock_session
 
         result = await searcher._safe_get("https://example.com/start")
-        assert result == final_response
+        assert isinstance(result, _SafeGetResponse)
+        assert result.status == 200
         assert mock_session.get.call_count == 2
 
 
@@ -2133,6 +2253,8 @@ class TestSafeGetDNSRebinding:
         with patch("asyncio.get_running_loop", return_value=mock_loop):
             mock_response = AsyncMock()
             mock_response.status = 200
+            mock_response.headers = {}
+            mock_response.text = AsyncMock(return_value="")
 
             mock_cm = MagicMock()
             mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
@@ -2143,7 +2265,8 @@ class TestSafeGetDNSRebinding:
             searcher.session = mock_session
 
             result = await searcher._safe_get("https://example.com")
-            assert result == mock_response
+            assert isinstance(result, _SafeGetResponse)
+            assert result.status == 200
 
     def test_validate_url_dns_rebinding(self):
         """_validate_url 允许域名通过（无法做 DNS 解析），确认修复必须在 _safe_get 中"""
@@ -2537,11 +2660,7 @@ class TestRetryLogic:
         mock_response_fail = None
         mock_response_success = MagicMock()
         mock_response_success.status = 200
-
-        async def safe_text_success():
-            return html_content
-
-        mock_response_success.text = safe_text_success
+        mock_response_success.text = html_content
 
         with (
             patch.object(
@@ -2563,11 +2682,7 @@ class TestRetryLogic:
         mock_response_fail = None
         mock_response_success = MagicMock()
         mock_response_success.status = 200
-
-        async def safe_text_success():
-            return html_content
-
-        mock_response_success.text = safe_text_success
+        mock_response_success.text = html_content
 
         with (
             patch.object(

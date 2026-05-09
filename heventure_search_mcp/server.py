@@ -5,6 +5,7 @@ MCP Web Search Server
 """
 
 import asyncio
+import dataclasses
 import importlib.metadata
 import ipaddress
 import json
@@ -92,6 +93,19 @@ async def _get_shared_session() -> aiohttp.ClientSession:
         timeout=aiohttp.ClientTimeout(total=30),
     )
     return _shared_session
+
+
+@dataclasses.dataclass
+class _SafeGetResponse:
+    """Lightweight container returned by _safe_get().
+
+    Holds status, headers, and pre-read body text so callers don't
+    need to manage the aiohttp response lifecycle.
+    """
+
+    status: int
+    headers: dict[str, str]  # headers copied as plain dict
+    text: str  # body decoded as text
 
 
 class WebSearcher:
@@ -273,7 +287,7 @@ class WebSearcher:
 
     async def _safe_get(
         self, url: str, max_redirects: int = 5, **kwargs
-    ) -> aiohttp.ClientResponse | None:
+    ) -> _SafeGetResponse | None:
         """安全地发送HTTP GET请求，手动跟随重定向以避免无限循环
 
         aiohttp 的默认重定向处理在某些站点（如 Bing）上会导致 TooManyRedirects 异常。
@@ -304,7 +318,12 @@ class WebSearcher:
                     if response.status in (301, 302, 303, 307, 308):
                         location = response.headers.get("Location", "")
                         if not location:
-                            return response
+                            _body = await self._safe_response_text(response)
+                            return _SafeGetResponse(
+                                status=response.status,
+                                headers=dict(response.headers),
+                                text=_body,
+                            )
 
                         # 解析相对URL
                         if location.startswith("/"):
@@ -358,7 +377,12 @@ class WebSearcher:
                         logger.debug(f"Redirect {redirect_count}: {current_url}")
                         continue
                     # 非重定向响应，返回响应对象供调用者读取
-                    return response
+                    _body = await self._safe_response_text(response)
+                    return _SafeGetResponse(
+                        status=response.status,
+                        headers=dict(response.headers),
+                        text=_body,
+                    )
             except Exception as e:
                 logger.error(f"请求失败 {current_url}: {e}")
                 return None
@@ -369,7 +393,7 @@ class WebSearcher:
 
     async def _safe_get_with_retry(
         self, url: str, retries: int = 1, delay: float = 1.0, **kwargs
-    ) -> aiohttp.ClientResponse | None:
+    ) -> _SafeGetResponse | None:
         """_safe_get with automatic retry on timeout/connection errors.
 
         Retries up to ``retries`` times with ``delay`` seconds between attempts
@@ -579,6 +603,29 @@ class WebSearcher:
             logger.error(f"DuckDuckGo搜索错误: {e}")
             return []
 
+    @staticmethod
+    def _decode_ddg_url(href: str) -> str:
+        """Extract the real target URL from DuckDuckGo redirect links.
+
+        DuckDuckGo HTML search returns URLs like:
+            //duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com&rut=...
+        This extracts and decodes the uddg parameter value.
+        Falls back to the original href if parsing fails.
+        """
+        if not href:
+            return href
+        # Protocol-relative URLs need https: prepended for urlparse
+        if href.startswith("//"):
+            href_to_parse = "https:" + href
+        else:
+            href_to_parse = href
+        parsed = urlparse(href_to_parse)
+        if "duckduckgo.com" in (parsed.hostname or ""):
+            qs = parse_qs(parsed.query)
+            if "uddg" in qs:
+                return qs["uddg"][0]
+        return href
+
     async def search_html_duckduckgo(self, query: str, max_results: int = 10) -> list:
         """通过HTML页面搜索DuckDuckGo"""
         try:
@@ -600,7 +647,8 @@ class WebSearcher:
 
                         if title_elem:
                             title = title_elem.get_text(strip=True)
-                            url = title_elem.get("href", "")
+                            raw_href = title_elem.get("href", "")
+                            url = self._decode_ddg_url(raw_href)
                             snippet = (
                                 snippet_elem.get_text(strip=True)
                                 if snippet_elem
@@ -665,7 +713,7 @@ class WebSearcher:
                 logger.warning(f"必应返回非200状态码: {response.status}")
                 return []
 
-            html = await self._safe_response_text(response)
+            html = response.text
 
             # 检测是否被阻止（CAPTCHA挑战等）
             html_lower = html.lower()
@@ -814,7 +862,7 @@ class WebSearcher:
                     if response is None or response.status != 200:
                         continue
 
-                    html = await self._safe_response_text(response)
+                    html = response.text
 
                     # 检测阻止
                     if not html or len(html) < 500:
@@ -1044,7 +1092,7 @@ class WebSearcher:
                 logger.warning(f"不支持的内容类型: {content_type} (URL: {url})")
                 return f"不支持的内容类型: {content_type or '未知'} (仅支持 HTML 页面)"
 
-            html = await self._safe_response_text(response)
+            html = response.text
             soup = BeautifulSoup(html, "html.parser")
 
             # 移除脚本和样式

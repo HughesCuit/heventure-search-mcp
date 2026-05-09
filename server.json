@@ -6,12 +6,12 @@
     "url": "https://github.com/HughesCuit/heventure-search-mcp",
     "source": "github"
   },
-  "version": "1.4.19",
+  "version": "1.5.2",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "heventure-search-mcp",
-      "version": "1.4.19",
+      "version": "1.5.2",
       "transport": {
         "type": "stdio"
       },
