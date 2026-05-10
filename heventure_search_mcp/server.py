@@ -296,6 +296,24 @@ class WebSearcher:
             raw = await response.read()
             return raw.decode("utf-8", errors="replace")
 
+    @staticmethod
+    def _normalize_url(url: str) -> str:
+        """Normalize a URL for cycle detection: strip trailing slashes, sort query params."""
+        parsed = urlparse(url)
+        # Strip trailing slash but keep root path as-is
+        path = parsed.path.rstrip("/") or "/"
+        # Sort query parameters for consistent comparison
+        qs = parse_qs(parsed.query, keep_blank_values=True)
+        sorted_query = urlencode(sorted(qs.items()), doseq=True)
+        # Reconstruct
+        netloc = parsed.netloc or ""
+        result = f"{parsed.scheme}://{netloc}{path}"
+        if sorted_query:
+            result += f"?{sorted_query}"
+        if parsed.fragment:
+            result += f"#{parsed.fragment}"
+        return result
+
     async def _safe_get(
         self, url: str, max_redirects: int = 5, **kwargs
     ) -> _SafeGetResponse | None:
@@ -309,7 +327,9 @@ class WebSearcher:
         """
         current_url = url
         redirect_count = 0
-        redirect_history_urls = set()  # sole cycle-detection mechanism
+        redirect_history_urls: set[str] = (
+            set()
+        )  # bounded cycle-detection via normalized URLs
 
         # DNS rebinding check: resolve initial URL hostname and block private IPs
         initial_parsed = urlparse(url)
@@ -378,11 +398,14 @@ class WebSearcher:
                             "?"
                         )
 
-                        # 通用循环检测：检查 URL 是否已在历史中
-                        if current_url in redirect_history_urls:
-                            logger.warning(f"检测到重定向循环，URL: {current_url}")
+                        # 通用循环检测：用归一化URL检查（去尾部斜杠+排序query参数）
+                        norm_url = self._normalize_url(current_url)
+                        if norm_url in redirect_history_urls:
+                            logger.warning(
+                                f"检测到重定向循环，URL: {current_url} (normalized: {norm_url})"
+                            )
                             return None
-                        redirect_history_urls.add(current_url)
+                        redirect_history_urls.add(norm_url)
                         redirect_count += 1
                         current_url = location
                         logger.debug(f"Redirect {redirect_count}: {current_url}")

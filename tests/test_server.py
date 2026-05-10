@@ -3073,3 +3073,124 @@ class TestMaxResultsValidation:
 
         results = await searcher.search_duckduckgo("test query", max_results=20)
         assert isinstance(results, list)
+
+
+class TestSafeGetRedirectLoop:
+    """Tests for _safe_get redirect loop detection with URL normalization."""
+
+    @pytest.fixture
+    def searcher(self):
+        WebSearcher.clear_cache()
+        return WebSearcher()
+
+    @pytest.mark.asyncio
+    async def test_redirect_loop_trailing_slash(self, searcher):
+        """Redirect chain differing only by trailing slash should be detected as loop."""
+        # Chain: /path/ -> /path -> /path/ (loop via trailing slash)
+        redirect_response_1 = AsyncMock()
+        redirect_response_1.status = 302
+        redirect_response_1.headers = {"Location": "https://example.com/path"}
+        redirect_response_1.__aenter__ = AsyncMock(return_value=redirect_response_1)
+        redirect_response_1.__aexit__ = AsyncMock(return_value=None)
+
+        redirect_response_2 = AsyncMock()
+        redirect_response_2.status = 302
+        redirect_response_2.headers = {"Location": "https://example.com/path/"}
+        redirect_response_2.__aenter__ = AsyncMock(return_value=redirect_response_2)
+        redirect_response_2.__aexit__ = AsyncMock(return_value=None)
+
+        async def mock_get(url, **kwargs):
+            if url.endswith("/path/"):
+                return redirect_response_1
+            elif url.endswith("/path"):
+                return redirect_response_2
+            return redirect_response_1
+
+        mock_session = MagicMock()
+        mock_session.get = mock_get
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com/path/")
+        assert result is None  # loop detected
+
+    @pytest.mark.asyncio
+    async def test_redirect_loop_query_param_order(self, searcher):
+        """Redirect chain differing only by query param order should be detected as loop."""
+        # Chain: ?a=1&b=2 -> ?b=2&a=1 -> ?a=1&b=2 (loop via param order)
+        redirect_response_1 = AsyncMock()
+        redirect_response_1.status = 302
+        redirect_response_1.headers = {"Location": "https://example.com/page?b=2&a=1"}
+        redirect_response_1.__aenter__ = AsyncMock(return_value=redirect_response_1)
+        redirect_response_1.__aexit__ = AsyncMock(return_value=None)
+
+        redirect_response_2 = AsyncMock()
+        redirect_response_2.status = 302
+        redirect_response_2.headers = {"Location": "https://example.com/page?a=1&b=2"}
+        redirect_response_2.__aenter__ = AsyncMock(return_value=redirect_response_2)
+        redirect_response_2.__aexit__ = AsyncMock(return_value=None)
+
+        async def mock_get(url, **kwargs):
+            if "a=1" in url and "b=2" in url:
+                if url.index("a") < url.index("b"):
+                    return redirect_response_1
+                else:
+                    return redirect_response_2
+            return redirect_response_1
+
+        mock_session = MagicMock()
+        mock_session.get = mock_get
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com/page?a=1&b=2")
+        assert result is None  # loop detected
+
+    @pytest.mark.asyncio
+    async def test_redirect_chain_exceeds_max_redirects(self, searcher):
+        """A chain of 5+ unique redirects should return None via max_redirects limit."""
+        responses = []
+        for i in range(6):
+            resp = AsyncMock()
+            resp.status = 302
+            resp.headers = {"Location": f"https://example.com/page/{i + 1}"}
+            resp.__aenter__ = AsyncMock(return_value=resp)
+            resp.__aexit__ = AsyncMock(return_value=None)
+            responses.append(resp)
+
+        async def mock_get(url, **kwargs):
+            # Find the right redirect based on URL path
+            for r in responses:
+                loc = r.headers["Location"]
+                if url == loc:
+                    idx = int(url.rstrip("/").split("/")[-1])
+                    if idx < len(responses):
+                        return responses[idx]
+            return responses[0]
+
+        mock_session = MagicMock()
+        mock_session.get = mock_get
+        searcher.session = mock_session
+
+        result = await searcher._safe_get("https://example.com/page/0", max_redirects=5)
+        assert result is None  # exceeded max_redirects
+
+    @pytest.mark.asyncio
+    async def test_normalize_url_basic(self):
+        """Test _normalize_url strips trailing slashes and sorts query params."""
+        # Trailing slash
+        assert (
+            WebSearcher._normalize_url("https://example.com/path/")
+            == "https://example.com/path"
+        )
+        assert (
+            WebSearcher._normalize_url("https://example.com/") == "https://example.com/"
+        )
+
+        # Query param sorting
+        normalized = WebSearcher._normalize_url("https://example.com/page?b=2&a=1")
+        assert normalized == "https://example.com/page?a=1&b=2"
+
+        # Normal URL unchanged
+        assert (
+            WebSearcher._normalize_url("https://example.com/page")
+            == "https://example.com/page"
+        )
