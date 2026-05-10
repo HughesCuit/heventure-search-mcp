@@ -51,11 +51,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pip-audit
-          pip install -e . --no-deps
+          # Install only declared dependencies from pyproject.toml (not the project itself)
+          python -c "
+          import tomllib, subprocess, sys
+          with open('pyproject.toml', 'rb') as f:
+              data = tomllib.load(f)
+          deps = data['project']['dependencies']
+          subprocess.check_call([sys.executable, '-m', 'pip', 'install'] + deps)
+          "
           
       - name: Audit dependencies for known vulnerabilities
         run: |
-          pip-audit --strict --skip-editable
+          pip-audit --strict
 
   uvx-test:
     runs-on: ubuntu-latest
