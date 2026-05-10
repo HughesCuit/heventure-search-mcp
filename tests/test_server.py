@@ -2695,3 +2695,381 @@ class TestRetryLogic:
         ):
             results = await searcher.search_google("test query")
             assert isinstance(results, list)
+
+
+class TestBothModeEngineStatus:
+    """Test engine status tracking in 'both' search mode."""
+
+    @pytest.fixture
+    def searcher(self):
+        WebSearcher.clear_cache()
+        return WebSearcher()
+
+    @pytest.mark.asyncio
+    async def test_both_mode_all_engines_return_results(self, monkeypatch):
+        """Both mode with all engines returning results — status shows count for each."""
+        google_results = [
+            {
+                "title": "G1",
+                "url": "https://g.com/1",
+                "snippet": "gs1",
+                "type": "google_result",
+            },
+        ]
+        bing_results = [
+            {
+                "title": "B1",
+                "url": "https://b.com/1",
+                "snippet": "bs1",
+                "type": "bing_result",
+            },
+        ]
+        ddg_results = [
+            {
+                "title": "D1",
+                "url": "https://d.com/1",
+                "snippet": "ds1",
+                "type": "related_topic",
+            },
+        ]
+
+        with (
+            patch.object(
+                WebSearcher,
+                "search_google",
+                new_callable=AsyncMock,
+                return_value=google_results,
+            ),
+            patch.object(
+                WebSearcher,
+                "search_bing",
+                new_callable=AsyncMock,
+                return_value=bing_results,
+            ),
+            patch.object(
+                WebSearcher,
+                "search_duckduckgo",
+                new_callable=AsyncMock,
+                return_value=ddg_results,
+            ),
+        ):
+            response = await server.handle_call_tool(
+                "web_search",
+                {"query": "test", "search_engine": "both", "max_results": 10},
+            )
+
+        text = response[0].text
+        # Verify engine status section exists
+        assert "各引擎状态:" in text
+        # Each engine should show its result count
+        assert "DuckDuckGo:" in text
+        assert "Bing:" in text
+        assert "Google:" in text
+
+    @pytest.mark.asyncio
+    async def test_both_mode_engine_throws_exception(self, searcher):
+        """Both mode with engine throwing exception — status shows error."""
+        google_results = [
+            {
+                "title": "G1",
+                "url": "https://g.com/1",
+                "snippet": "gs1",
+                "type": "google_result",
+            },
+        ]
+        bing_results = [
+            {
+                "title": "B1",
+                "url": "https://b.com/1",
+                "snippet": "bs1",
+                "type": "bing_result",
+            },
+        ]
+
+        # Make DuckDuckGo raise an exception
+        async def ddg_raises(query, max_results=10):
+            raise ConnectionError("Network unreachable")
+
+        with (
+            patch.object(
+                WebSearcher,
+                "search_google",
+                new_callable=AsyncMock,
+                return_value=google_results,
+            ),
+            patch.object(
+                WebSearcher,
+                "search_bing",
+                new_callable=AsyncMock,
+                return_value=bing_results,
+            ),
+            patch.object(
+                WebSearcher,
+                "search_duckduckgo",
+                new_callable=AsyncMock,
+                side_effect=ddg_raises,
+            ),
+        ):
+            response = await server.handle_call_tool(
+                "web_search",
+                {"query": "test", "search_engine": "both", "max_results": 10},
+            )
+
+        text = response[0].text
+        assert "各引擎状态:" in text
+        # DuckDuckGo should show error from search_with_fallback's exception handler
+        assert "DuckDuckGo: error (ConnectionError)" in text
+        # Other engines should show result counts
+        assert "Bing: 1 results" in text
+        assert "Google: 1 results" in text
+
+    @pytest.mark.asyncio
+    async def test_both_mode_engine_status_section_appears(self, monkeypatch):
+        """Verify the '--- 各引擎状态:' section appears when engine is 'both'."""
+        google_results = [
+            {
+                "title": "G1",
+                "url": "https://g.com/1",
+                "snippet": "gs1",
+                "type": "google_result",
+            },
+        ]
+        bing_results = [
+            {
+                "title": "B1",
+                "url": "https://b.com/1",
+                "snippet": "bs1",
+                "type": "bing_result",
+            },
+        ]
+        ddg_results = [
+            {
+                "title": "D1",
+                "url": "https://d.com/1",
+                "snippet": "ds1",
+                "type": "related_topic",
+            },
+        ]
+
+        with (
+            patch.object(
+                WebSearcher,
+                "search_google",
+                new_callable=AsyncMock,
+                return_value=google_results,
+            ),
+            patch.object(
+                WebSearcher,
+                "search_bing",
+                new_callable=AsyncMock,
+                return_value=bing_results,
+            ),
+            patch.object(
+                WebSearcher,
+                "search_duckduckgo",
+                new_callable=AsyncMock,
+                return_value=ddg_results,
+            ),
+        ):
+            response = await server.handle_call_tool(
+                "web_search",
+                {"query": "test", "search_engine": "both", "max_results": 10},
+            )
+
+        text = response[0].text
+        # The status section should be present
+        assert "---" in text
+        assert "各引擎状态:" in text
+
+    @pytest.mark.asyncio
+    async def test_single_engine_mode_no_status_section(self, monkeypatch):
+        """Single engine mode should NOT show the status section."""
+        mock_results = [
+            {
+                "title": "R1",
+                "url": "https://a.com/1",
+                "snippet": "S1",
+                "type": "duckduckgo_result",
+            },
+        ]
+
+        with patch.object(
+            WebSearcher,
+            "search_duckduckgo",
+            new_callable=AsyncMock,
+            return_value=mock_results,
+        ):
+            response = await server.handle_call_tool(
+                "web_search",
+                {"query": "test", "search_engine": "duckduckgo", "max_results": 5},
+            )
+
+        text = response[0].text
+        # Status section should NOT appear for single engine
+        assert "各引擎状态:" not in text
+
+    @pytest.mark.asyncio
+    async def test_both_mode_engine_empty_results_shows_zero(self, monkeypatch):
+        """Both mode with engine returning empty — status shows 0 results."""
+        google_results = [
+            {
+                "title": "G1",
+                "url": "https://g.com/1",
+                "snippet": "gs1",
+                "type": "google_result",
+            },
+        ]
+
+        with (
+            patch.object(
+                WebSearcher,
+                "search_google",
+                new_callable=AsyncMock,
+                return_value=google_results,
+            ),
+            patch.object(
+                WebSearcher, "search_bing", new_callable=AsyncMock, return_value=[]
+            ),
+            patch.object(
+                WebSearcher,
+                "search_duckduckgo",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+        ):
+            response = await server.handle_call_tool(
+                "web_search",
+                {"query": "test", "search_engine": "both", "max_results": 10},
+            )
+
+        text = response[0].text
+        assert "各引擎状态:" in text
+        # Engines with no results should show 0 results
+        assert "Bing: 0 results" in text
+        assert "DuckDuckGo: 0 results" in text
+        assert "Google: 1 results" in text
+
+
+class TestMaxResultsValidation:
+    """Test that search methods validate max_results to [1, 20] bounds."""
+
+    @pytest.fixture
+    def searcher(self):
+        """创建 WebSearcher 实例（每个测试清空缓存）"""
+        WebSearcher.clear_cache()
+        return WebSearcher()
+
+    @pytest.mark.asyncio
+    async def test_max_results_zero_becomes_one(self, searcher):
+        """max_results=0 should be clamped to 1."""
+        import json as _json
+
+        async def async_text():
+            return _json.dumps({"Abstract": "", "RelatedTopics": []})
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = async_text
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_duckduckgo("test query", max_results=0)
+        assert isinstance(results, list)
+
+    @pytest.mark.asyncio
+    async def test_max_results_negative_becomes_one(self, searcher):
+        """max_results=-5 should be clamped to 1."""
+        import json as _json
+
+        async def async_text():
+            return _json.dumps({"Abstract": "", "RelatedTopics": []})
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = async_text
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_duckduckgo("test query", max_results=-5)
+        assert isinstance(results, list)
+
+    @pytest.mark.asyncio
+    async def test_max_results_100_becomes_20(self, searcher):
+        """max_results=100 should be clamped to 20."""
+        import json as _json
+
+        async def async_text():
+            return _json.dumps({"Abstract": "", "RelatedTopics": []})
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = async_text
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_duckduckgo("test query", max_results=100)
+        assert isinstance(results, list)
+
+    @pytest.mark.asyncio
+    async def test_max_results_1_unchanged(self, searcher):
+        """max_results=1 should stay 1 (within bounds)."""
+        import json as _json
+
+        async def async_text():
+            return _json.dumps({"Abstract": "", "RelatedTopics": []})
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = async_text
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_duckduckgo("test query", max_results=1)
+        assert isinstance(results, list)
+
+    @pytest.mark.asyncio
+    async def test_max_results_20_unchanged(self, searcher):
+        """max_results=20 should stay 20 (within bounds)."""
+        import json as _json
+
+        async def async_text():
+            return _json.dumps({"Abstract": "", "RelatedTopics": []})
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = async_text
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_cm)
+        searcher.session = mock_session
+
+        results = await searcher.search_duckduckgo("test query", max_results=20)
+        assert isinstance(results, list)

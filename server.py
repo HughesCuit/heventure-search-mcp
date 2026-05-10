@@ -391,6 +391,7 @@ class WebSearcher:
 
     async def search_duckduckgo(self, query: str, max_results: int = 10) -> list:
         """使用DuckDuckGo进行搜索"""
+        max_results = max(1, min(max_results, 20))
         cache_key = self._get_cache_key(query, "duckduckgo", max_results)
         cached = self._get_from_cache(cache_key)
         if cached is not None:
@@ -418,18 +419,14 @@ class WebSearcher:
                                 logger.warning(
                                     "DuckDuckGo API返回非JSON响应，尝试备用方法"
                                 )
-                                results = await self.search_html_duckduckgo(
-                                    query, max_results
+                                return await self._fallback_to_html_duckduckgo(
+                                    query, max_results, cache_key
                                 )
-                                self._set_to_cache(cache_key, results)
-                                return results
                         else:
                             logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
-                            results = await self.search_html_duckduckgo(
-                                query, max_results
+                            return await self._fallback_to_html_duckduckgo(
+                                query, max_results, cache_key
                             )
-                            self._set_to_cache(cache_key, results)
-                            return results
 
                     results = []
                     seen_urls: set[str] = set()
@@ -489,9 +486,9 @@ class WebSearcher:
 
                     # 如果没有返回任何结果，尝试HTML模式
                     if not results:
-                        results = await self.search_html_duckduckgo(query, max_results)
-                        self._set_to_cache(cache_key, results)
-                        return results
+                        return await self._fallback_to_html_duckduckgo(
+                            query, max_results, cache_key
+                        )
 
                     self._set_to_cache(cache_key, results)
                     return results
@@ -499,15 +496,27 @@ class WebSearcher:
                     logger.warning(
                         f"DuckDuckGo API 返回非预期状态码: {response.status}"
                     )
-                    results = await self.search_html_duckduckgo(query, max_results)
-                    self._set_to_cache(cache_key, results)
-                    return results
+                    return await self._fallback_to_html_duckduckgo(
+                        query, max_results, cache_key
+                    )
         except Exception as e:
             logger.error(f"DuckDuckGo搜索错误: {e}")
             return []
 
+    async def _fallback_to_html_duckduckgo(
+        self, query: str, max_results: int, cache_key: str
+    ) -> list:
+        """回退到 DuckDuckGo HTML 搜索，更新缓存并返回结果。
+
+        统一处理 API 返回非 JSON、空结果、非预期状态码等情况的回退逻辑。
+        """
+        results = await self.search_html_duckduckgo(query, max_results)
+        self._set_to_cache(cache_key, results)
+        return results
+
     async def search_html_duckduckgo(self, query: str, max_results: int = 10) -> list:
         """通过HTML页面搜索DuckDuckGo"""
+        max_results = max(1, min(max_results, 20))
         try:
             url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
 
@@ -560,6 +569,7 @@ class WebSearcher:
         注意: 不在 URL 中使用 mkt 参数，因为 Bing 会通过 mkt=zh-CN 在 bing.com 和 cn.bing.com
         之间形成无限重定向循环 (_safe_get 会自动剥离该参数)
         """
+        max_results = max(1, min(max_results, 20))
         cache_key = self._get_cache_key(query, "bing", max_results)
         cached = self._get_from_cache(cache_key)
         if cached is not None:
@@ -712,6 +722,7 @@ class WebSearcher:
         特别是在非桌面环境中。此方法为尽力而为，不保证始终可用。
         建议使用 DuckDuckGo 作为默认搜索引擎。
         """
+        max_results = max(1, min(max_results, 20))
         cache_key = self._get_cache_key(query, "google", max_results)
         cached = self._get_from_cache(cache_key)
         if cached is not None:
@@ -855,6 +866,7 @@ class WebSearcher:
         文档: https://serpapi.com/search-api
         免费额度: 每月 100 次
         """
+        max_results = max(1, min(max_results, 20))
         cache_key = self._get_cache_key(query, "serpapi", max_results)
         cached = self._get_from_cache(cache_key)
         if cached is not None:
@@ -910,6 +922,7 @@ class WebSearcher:
         文档: https://docs.tavily.com/
         免费额度: 每月 1000 次
         """
+        max_results = max(1, min(max_results, 20))
         cache_key = self._get_cache_key(query, "tavily", max_results)
         cached = self._get_from_cache(cache_key)
         if cached is not None:
