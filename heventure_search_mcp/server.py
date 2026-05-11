@@ -549,24 +549,14 @@ class WebSearcher:
                                 logger.warning(
                                     "DuckDuckGo API返回非JSON响应，尝试备用方法"
                                 )
-                                results = await self.search_html_duckduckgo(
-                                    query, max_results
+                                return await self._fallback_to_html_duckduckgo(
+                                    query, max_results, cache_key
                                 )
-                                self._set_to_cache(cache_key, results)
-                                self._engine_status["duckduckgo"] = (
-                                    f"{len(results)} results"
-                                )
-                                return results
                         else:
                             logger.warning("DuckDuckGo API返回非JSON响应，尝试备用方法")
-                            results = await self.search_html_duckduckgo(
-                                query, max_results
+                            return await self._fallback_to_html_duckduckgo(
+                                query, max_results, cache_key
                             )
-                            self._set_to_cache(cache_key, results)
-                            self._engine_status["duckduckgo"] = (
-                                f"{len(results)} results"
-                            )
-                            return results
 
                     results = []
                     seen_urls: set[str] = set()
@@ -626,10 +616,9 @@ class WebSearcher:
 
                     # 如果没有返回任何结果，尝试HTML模式
                     if not results:
-                        results = await self.search_html_duckduckgo(query, max_results)
-                        self._set_to_cache(cache_key, results)
-                        self._engine_status["duckduckgo"] = f"{len(results)} results"
-                        return results
+                        return await self._fallback_to_html_duckduckgo(
+                            query, max_results, cache_key
+                        )
 
                     self._set_to_cache(cache_key, results)
                     self._engine_status["duckduckgo"] = f"{len(results)} results"
@@ -638,10 +627,9 @@ class WebSearcher:
                     logger.warning(
                         f"DuckDuckGo API 返回非预期状态码: {response.status}"
                     )
-                    results = await self.search_html_duckduckgo(query, max_results)
-                    self._set_to_cache(cache_key, results)
-                    self._engine_status["duckduckgo"] = f"{len(results)} results"
-                    return results
+                    return await self._fallback_to_html_duckduckgo(
+                        query, max_results, cache_key
+                    )
         except Exception as e:
             logger.error(f"DuckDuckGo搜索错误: {e}")
             self._engine_status["duckduckgo"] = f"error ({type(e).__name__})"
@@ -669,6 +657,18 @@ class WebSearcher:
             if "uddg" in qs:
                 return qs["uddg"][0]
         return href
+
+    async def _fallback_to_html_duckduckgo(
+        self, query: str, max_results: int, cache_key: str
+    ) -> list:
+        """回退到 DuckDuckGo HTML 搜索，更新缓存并返回结果。
+
+        统一处理 API 返回非 JSON、空结果、非预期状态码等情况的回退逻辑。
+        """
+        results = await self.search_html_duckduckgo(query, max_results)
+        self._set_to_cache(cache_key, results)
+        self._engine_status["duckduckgo"] = f"{len(results)} results"
+        return results
 
     async def search_html_duckduckgo(self, query: str, max_results: int = 10) -> list:
         """通过HTML页面搜索DuckDuckGo"""

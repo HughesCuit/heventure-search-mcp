@@ -3090,24 +3090,24 @@ class TestSafeGetRedirectLoop:
         redirect_response_1 = AsyncMock()
         redirect_response_1.status = 302
         redirect_response_1.headers = {"Location": "https://example.com/path"}
-        redirect_response_1.__aenter__ = AsyncMock(return_value=redirect_response_1)
-        redirect_response_1.__aexit__ = AsyncMock(return_value=None)
 
         redirect_response_2 = AsyncMock()
         redirect_response_2.status = 302
         redirect_response_2.headers = {"Location": "https://example.com/path/"}
-        redirect_response_2.__aenter__ = AsyncMock(return_value=redirect_response_2)
-        redirect_response_2.__aexit__ = AsyncMock(return_value=None)
 
-        async def mock_get(url, **kwargs):
+        def mock_session_get(url, **kwargs):
+            cm = MagicMock()
             if url.endswith("/path/"):
-                return redirect_response_1
+                cm.__aenter__ = AsyncMock(return_value=redirect_response_1)
             elif url.endswith("/path"):
-                return redirect_response_2
-            return redirect_response_1
+                cm.__aenter__ = AsyncMock(return_value=redirect_response_2)
+            else:
+                cm.__aenter__ = AsyncMock(return_value=redirect_response_1)
+            cm.__aexit__ = AsyncMock(return_value=None)
+            return cm
 
         mock_session = MagicMock()
-        mock_session.get = mock_get
+        mock_session.get = MagicMock(side_effect=mock_session_get)
         searcher.session = mock_session
 
         result = await searcher._safe_get("https://example.com/path/")
@@ -3120,25 +3120,25 @@ class TestSafeGetRedirectLoop:
         redirect_response_1 = AsyncMock()
         redirect_response_1.status = 302
         redirect_response_1.headers = {"Location": "https://example.com/page?b=2&a=1"}
-        redirect_response_1.__aenter__ = AsyncMock(return_value=redirect_response_1)
-        redirect_response_1.__aexit__ = AsyncMock(return_value=None)
 
         redirect_response_2 = AsyncMock()
         redirect_response_2.status = 302
         redirect_response_2.headers = {"Location": "https://example.com/page?a=1&b=2"}
-        redirect_response_2.__aenter__ = AsyncMock(return_value=redirect_response_2)
-        redirect_response_2.__aexit__ = AsyncMock(return_value=None)
 
-        async def mock_get(url, **kwargs):
+        def mock_session_get(url, **kwargs):
+            cm = MagicMock()
             if "a=1" in url and "b=2" in url:
                 if url.index("a") < url.index("b"):
-                    return redirect_response_1
+                    cm.__aenter__ = AsyncMock(return_value=redirect_response_1)
                 else:
-                    return redirect_response_2
-            return redirect_response_1
+                    cm.__aenter__ = AsyncMock(return_value=redirect_response_2)
+            else:
+                cm.__aenter__ = AsyncMock(return_value=redirect_response_1)
+            cm.__aexit__ = AsyncMock(return_value=None)
+            return cm
 
         mock_session = MagicMock()
-        mock_session.get = mock_get
+        mock_session.get = MagicMock(side_effect=mock_session_get)
         searcher.session = mock_session
 
         result = await searcher._safe_get("https://example.com/page?a=1&b=2")
@@ -3152,22 +3152,25 @@ class TestSafeGetRedirectLoop:
             resp = AsyncMock()
             resp.status = 302
             resp.headers = {"Location": f"https://example.com/page/{i + 1}"}
-            resp.__aenter__ = AsyncMock(return_value=resp)
-            resp.__aexit__ = AsyncMock(return_value=None)
             responses.append(resp)
 
-        async def mock_get(url, **kwargs):
+        def mock_session_get(url, **kwargs):
+            cm = MagicMock()
             # Find the right redirect based on URL path
             for r in responses:
                 loc = r.headers["Location"]
                 if url == loc:
                     idx = int(url.rstrip("/").split("/")[-1])
                     if idx < len(responses):
-                        return responses[idx]
-            return responses[0]
+                        cm.__aenter__ = AsyncMock(return_value=responses[idx])
+                        cm.__aexit__ = AsyncMock(return_value=None)
+                        return cm
+            cm.__aenter__ = AsyncMock(return_value=responses[0])
+            cm.__aexit__ = AsyncMock(return_value=None)
+            return cm
 
         mock_session = MagicMock()
-        mock_session.get = mock_get
+        mock_session.get = MagicMock(side_effect=mock_session_get)
         searcher.session = mock_session
 
         result = await searcher._safe_get("https://example.com/page/0", max_redirects=5)
