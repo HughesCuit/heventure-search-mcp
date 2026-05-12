@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Kanban ↔ GitHub Issue bridge.
-
 Commands:
     create   --kanban-id <id> --title "..." --body "..." [--labels "l1,l2"]
     close    --kanban-id <id> --issue-number <N> --summary "..."
     link     --kanban-id <id> --issue-number <N>
     list-stale [--days 7]
+    downgrade-stale [--days 14]  — mark stale + priority:low
+    close-stale [--days 30]      — auto-close stale issues
 """
 
 import argparse
@@ -116,12 +117,9 @@ def cmd_link(args: argparse.Namespace) -> None:
 
 
 def cmd_list_stale(args: argparse.Namespace) -> None:
-    """List open auto-improve issues older than *days*."""
+    """List open auto-improve issues older than *days* (by created_at)."""
     since = (datetime.now(timezone.utc) - timedelta(days=args.days)).isoformat()
-    path = (
-        f"/repos/{REPO}/issues"
-        f"?state=open&labels=auto-improve&since={since}&per_page=100"
-    )
+    path = f"/repos/{REPO}/issues?state=open&labels=auto-improve&per_page=100"
     issues = _request("GET", path)
     stale = [
         {
@@ -135,6 +133,85 @@ def cmd_list_stale(args: argparse.Namespace) -> None:
         if i["created_at"] < since
     ]
     print(json.dumps(stale))
+
+
+def _get_open_auto_improve_issues() -> list[dict]:
+    """Fetch all open auto-improve issues."""
+    path = f"/repos/{REPO}/issues?state=open&labels=auto-improve&per_page=100"
+    return _request("GET", path)
+
+
+def _parse_labels(issue: dict) -> list[str]:
+    return [lb["name"] for lb in issue.get("labels", [])]
+
+
+def cmd_downgrade_stale(args: argparse.Namespace) -> None:
+    """Downgrade priority:medium -> priority:low and add 'stale' label after N days."""
+    issues = _get_open_auto_improve_issues()
+    now = datetime.now(timezone.utc)
+    threshold = timedelta(days=args.days)
+    results = []
+
+    for issue in issues:
+        created = datetime.fromisoformat(issue["created_at"].replace("Z", "+00:00"))
+        age = now - created
+        if age <= threshold:
+            continue
+        labels = _parse_labels(issue)
+        if "stale" in labels:
+            continue
+        if "priority:medium" not in labels:
+            continue
+
+        num = issue["number"]
+        # Replace priority:medium with priority:low, add stale
+        new_labels = [lb for lb in labels if lb != "priority:medium"]
+        if "priority:low" not in new_labels:
+            new_labels.append("priority:low")
+        if "stale" not in new_labels:
+            new_labels.append("stale")
+
+        _request("PATCH", f"/repos/{REPO}/issues/{num}", {"labels": new_labels})
+        results.append(
+            {"number": num, "title": issue["title"][:60], "action": "downgraded"}
+        )
+        print(f"  [downgrade] #{num} -> priority:low + stale")
+
+    print(json.dumps({"downgraded": results}))
+
+
+def cmd_close_stale(args: argparse.Namespace) -> None:
+    """Auto-close auto-improve issues older than N days."""
+    issues = _get_open_auto_improve_issues()
+    now = datetime.now(timezone.utc)
+    threshold = timedelta(days=args.days)
+    results = []
+
+    for issue in issues:
+        created = datetime.fromisoformat(issue["created_at"].replace("Z", "+00:00"))
+        age = now - created
+        if age <= threshold:
+            continue
+        labels = _parse_labels(issue)
+        if "stale" not in labels:
+            continue
+
+        num = issue["number"]
+        _post_comment(num, f"Auto-closed: stale auto-improve issue (>{args.days} days)")
+        _request(
+            "PATCH",
+            f"/repos/{REPO}/issues/{num}",
+            {
+                "state": "closed",
+                "state_reason": "not_planned",
+            },
+        )
+        results.append(
+            {"number": num, "title": issue["title"][:60], "action": "closed"}
+        )
+        print(f"  [close] #{num}")
+
+    print(json.dumps({"closed": results}))
 
 
 # ---------------------------------------------------------------------------
@@ -164,12 +241,20 @@ def main() -> None:
     p_stale = sub.add_parser("list-stale")
     p_stale.add_argument("--days", type=int, default=7)
 
+    p_down = sub.add_parser("downgrade-stale")
+    p_down.add_argument("--days", type=int, default=14)
+
+    p_close = sub.add_parser("close-stale")
+    p_close.add_argument("--days", type=int, default=30)
+
     args = parser.parse_args()
     {
         "create": cmd_create,
         "close": cmd_close,
         "link": cmd_link,
         "list-stale": cmd_list_stale,
+        "downgrade-stale": cmd_downgrade_stale,
+        "close-stale": cmd_close_stale,
     }[args.command](args)
 
 
