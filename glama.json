@@ -1,13 +1,4 @@
 {
-  "$schema": "https://glama.ai/schemas/mcp-server.json",
-  "name": "heventure-search-mcp",
-  "description": "Free, API-key-free web search MCP server. Supports DuckDuckGo, Bing, and Google without any API keys. Optionally integrates SerpAPI and Tavily for enhanced search quality. Features async processing, LRU caching, and multiple search engine fallback.",
-  "repository": {
-    "url": "https://github.com/HughesCuit/heventure-search-mcp",
-    "branch": "main"
-  },
-  "homepage": "https://github.com/HughesCuit/heventure-search-mcp",
-  "license": "MIT",
-  "categories": ["search", "web"],
-  "tags": ["mcp", "web-search", "free", "no-api-key", "duckduckgo", "bing", "google"]
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "maintainers": ["HughesCuit"]
 }

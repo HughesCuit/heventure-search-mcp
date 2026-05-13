@@ -1018,25 +1018,55 @@ class WebSearcher:
 
 @server.list_tools()
 async def handle_list_tools() -> list[Tool]:
-    """列出可用工具"""
+    """List available tools"""
     return [
         Tool(
             name="web_search",
-            description="搜索网页内容，支持 DuckDuckGo、Google、必应搜索引擎。可选配置 SerpAPI Key 或 Tavily API Key 提升搜索质量和稳定性",
+            description=(
+                "Search the web using multiple search engines. Use this tool when you "
+                "need to find current information, articles, or references from the "
+                "internet. Supports DuckDuckGo, Google, and Bing as free engines, with "
+                "optional SerpAPI (requires SERPAPI_KEY env var) and Tavily "
+                "(requires TAVILY_API_KEY env var) for higher-quality, more stable results. "
+                "By default ('both'), queries DuckDuckGo and Bing concurrently and merges "
+                "results, providing good coverage without any API keys. Each result "
+                "includes title, URL, and description snippet. Rate limiting and caching "
+                "are applied automatically."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "搜索查询字符串"},
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "The search query string. Use specific keywords for best "
+                            "results. Supports natural language queries (e.g., 'best "
+                            "practices for Python async') as well as keyword-style queries "
+                            "(e.g., 'Python async await tutorial')."
+                        ),
+                    },
                     "max_results": {
                         "type": "integer",
-                        "description": "最大结果数量",
+                        "description": (
+                            "Maximum number of results to return per search engine. "
+                            "Default is 10. Range: 1-20. Higher values increase latency. "
+                            "Actual count may be lower if the engine returns fewer matches."
+                        ),
                         "default": 10,
                         "minimum": 1,
                         "maximum": 20,
                     },
                     "search_engine": {
                         "type": "string",
-                        "description": "搜索引擎选择：duckduckgo / bing / google / serpapi / tavily / both",
+                        "description": (
+                            "Which search engine(s) to query. Options: 'duckduckgo' (free, "
+                            "no API key needed), 'bing' (free), 'google' (free), "
+                            "'serpapi' (requires SERPAPI_KEY), 'tavily' (requires "
+                            "TAVILY_API_KEY), 'both' (default — uses DuckDuckGo + Bing "
+                            "concurrently for broader coverage without API keys). Use "
+                            "'serpapi' or 'tavily' when you need higher-quality results "
+                            "and have the API key configured."
+                        ),
                         "enum": [
                             "duckduckgo",
                             "bing",
@@ -1053,11 +1083,26 @@ async def handle_list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_webpage_content",
-            description="获取指定网页的文本内容",
+            description=(
+                "Extract readable text content from a specific webpage URL. Use this "
+                "tool after web_search when you need the full text of a page found in "
+                "search results. The tool strips scripts, styles, and navigation elements, "
+                "returning only the meaningful text content. Output is truncated to 2000 "
+                "characters to stay within context limits. Returns an empty string if "
+                "the page cannot be fetched or parsed."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "url": {"type": "string", "description": "要获取内容的网页URL"}
+                    "url": {
+                        "type": "string",
+                        "description": (
+                            "The full URL of the webpage to extract content from "
+                            "(e.g., 'https://example.com/article'). Must be a valid "
+                            "HTTP or HTTPS URL. Supports most standard web pages; "
+                            "JavaScript-rendered content may not be fully captured."
+                        ),
+                    }
                 },
                 "required": ["url"],
             },
