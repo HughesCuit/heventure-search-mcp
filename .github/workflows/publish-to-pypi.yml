@@ -55,7 +55,7 @@ jobs:
 
         def get_current_version():
             with open('pyproject.toml') as f:
-                m = re.search(r'version = "([^"]+")', f.read())
+                m = re.search(r'version = "([^"]+)"', f.read())
             return m.group(1) if m else None
 
         def get_pypi_version():
