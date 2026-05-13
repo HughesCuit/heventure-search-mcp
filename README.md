@@ -7,6 +7,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/heventure-search-mcp.svg)](https://pypi.org/project/heventure-search-mcp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Downloads](https://img.shields.io/pypi/dm/heventure-search-mcp.svg)](https://pypi.org/project/heventure-search-mcp/)
+[![heventure-search-mcp MCP server](https://glama.ai/mcp/servers/HughesCuit/heventure-search-mcp/badges/score.svg)](https://glama.ai/mcp/servers/HughesCuit/heventure-search-mcp)
 
 # 🔍 MCP Web Search Server
 
